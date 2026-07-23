@@ -8,13 +8,14 @@ use std::collections::VecDeque;
 use std::ffi::CString;
 use std::os::raw::{c_char, c_int, c_void};
 use suricata::applayer::{
-    state_get_tx_iterator, AppLayerEvent, AppLayerRegisterParser,
+    state_get_tx_iterator, AppLayerEvent, AppLayerFrameType, AppLayerRegisterParser,
     AppLayerRegisterProtocolDetection, AppLayerResult, AppLayerStateData, AppLayerTxData,
     RustParser, State, StreamSlice, Transaction, APP_LAYER_PARSER_EOF_TC, APP_LAYER_PARSER_EOF_TS,
     APP_LAYER_PARSER_OPT_ACCEPT_GAPS,
 };
 use suricata::conf::conf_get;
 use suricata::core::{ALPROTO_UNKNOWN, IPPROTO_TCP};
+use suricata::frames::Frame;
 use suricata::{
     build_slice, cast_pointer, export_state_data_get, export_tx_data_get, SCLogError, SCLogNotice,
 };
@@ -29,9 +30,51 @@ pub(crate) static mut ALPROTO_S7COMM: AppProto = ALPROTO_UNKNOWN;
 /// Maximum number of live transactions before we force an error (DoS guard).
 static mut S7COMM_MAX_TX: usize = 1024;
 
-/// Maximum bytes we will buffer per direction while waiting for a full PDU.
-/// A single TPKT is capped at 65535 bytes; this bounds pathological buffering.
+/// Maximum size (bytes) of a single S7comm PDU we will accept before erroring.
+/// A TPKT length field is 16-bit, so 65535 is the protocol maximum; the default
+/// bounds pathological reassembly requests.
 static mut S7COMM_MAX_BUFFER: usize = 131072;
+
+/// Frame types exposed to the Suricata detection engine.
+#[repr(u8)]
+pub(crate) enum S7commFrameType {
+    /// The entire TPKT/COTP/S7comm PDU.
+    Pdu = 0,
+    /// The S7comm portion only (after TPKT + COTP).
+    S7comm = 1,
+}
+
+impl AppLayerFrameType for S7commFrameType {
+    fn from_u8(value: u8) -> Option<Self> {
+        match value {
+            0 => Some(Self::Pdu),
+            1 => Some(Self::S7comm),
+            _ => None,
+        }
+    }
+
+    fn as_u8(&self) -> u8 {
+        match self {
+            Self::Pdu => 0,
+            Self::S7comm => 1,
+        }
+    }
+
+    fn from_str(s: &str) -> Option<Self> {
+        match s {
+            "pdu" => Some(Self::Pdu),
+            "s7comm" => Some(Self::S7comm),
+            _ => None,
+        }
+    }
+
+    fn to_cstring(&self) -> *const c_char {
+        match self {
+            Self::Pdu => b"pdu\0".as_ptr() as *const c_char,
+            Self::S7comm => b"s7comm\0".as_ptr() as *const c_char,
+        }
+    }
+}
 
 #[derive(AppLayerEvent)]
 pub(crate) enum S7commEvent {
@@ -84,10 +127,13 @@ pub(crate) struct S7commTransaction {
 
     // S7comm-plus
     pub is_s7comm_plus: bool,
+    pub s7plus_version: u8,
     pub s7plus_opcode: u8,
     pub s7plus_opcode_name: Option<&'static str>,
     pub s7plus_function: u16,
     pub s7plus_function_name: Option<&'static str>,
+    pub s7plus_has_function: bool,
+    pub s7plus_seqnum: u16,
 
     pub is_dangerous: bool,
     pub attack_technique: Option<&'static str>,
@@ -135,10 +181,13 @@ impl S7commTransaction {
             has_tsap: false,
             plc_control_service: None,
             is_s7comm_plus: false,
+            s7plus_version: 0,
             s7plus_opcode: 0,
             s7plus_opcode_name: None,
             s7plus_function: 0,
             s7plus_function_name: None,
+            s7plus_has_function: false,
+            s7plus_seqnum: 0,
             is_dangerous: false,
             attack_technique: None,
             complete: false,
@@ -160,8 +209,6 @@ pub(crate) struct S7commState {
     state_data: AppLayerStateData,
     tx_id: u64,
     transactions: VecDeque<S7commTransaction>,
-    request_buffer: Vec<u8>,
-    response_buffer: Vec<u8>,
     // Connection-level TSAP info learned from COTP CR/CC
     conn_src_tsap: u16,
     conn_dst_tsap: u16,
@@ -219,51 +266,46 @@ impl S7commState {
             .find(|tx| tx.pdu_reference == pdu_ref && !tx.complete)
     }
 
-    fn parse_request(&mut self, input: &[u8]) -> AppLayerResult {
+    fn parse_request(&mut self, flow: *const Flow, stream_slice: &StreamSlice) -> AppLayerResult {
+        let input = stream_slice.as_slice();
         if input.is_empty() {
             return AppLayerResult::ok();
         }
 
-        self.request_buffer.extend_from_slice(input);
-
-        // Bound pathological buffering (DoS guard).
-        if self.request_buffer.len() > unsafe { S7COMM_MAX_BUFFER } {
-            self.request_buffer.clear();
-            return AppLayerResult::err();
-        }
-
-        loop {
-            if self.request_buffer.len() < 4 {
-                return AppLayerResult::ok();
+        let mut start = input;
+        while !start.is_empty() {
+            // Need the 4-byte TPKT header to know the PDU length.
+            if start.len() < 4 {
+                let consumed = input.len() - start.len();
+                return AppLayerResult::incomplete(consumed as u32, (4 - start.len()) as u32);
             }
 
-            let tpkt_len =
-                u16::from_be_bytes([self.request_buffer[2], self.request_buffer[3]]) as usize;
-            if tpkt_len < 7 {
-                self.request_buffer.clear();
+            let tpkt_len = u16::from_be_bytes([start[2], start[3]]) as usize;
+            if tpkt_len < 7 || tpkt_len > unsafe { S7COMM_MAX_BUFFER } {
                 return AppLayerResult::err();
             }
-            if self.request_buffer.len() < tpkt_len {
-                return AppLayerResult::ok();
+            if start.len() < tpkt_len {
+                // Ask Suricata to reassemble more of the stream for us.
+                let consumed = input.len() - start.len();
+                return AppLayerResult::incomplete(consumed as u32, (tpkt_len - start.len()) as u32);
             }
 
-            let pdu_data: Vec<u8> = self.request_buffer.drain(..tpkt_len).collect();
+            let pdu_data = &start[..tpkt_len];
+            self.emit_frames(flow, stream_slice, pdu_data);
 
-            match parse_s7comm_pdu(&pdu_data) {
+            match parse_s7comm_pdu(pdu_data) {
                 Ok((_, pdu)) => {
-                    self.process_request_pdu(&pdu, &pdu_data);
+                    self.process_request_pdu(&pdu, pdu_data);
                 }
                 Err(_) => {
-                    if let Some(tx) = self.transactions.back_mut() {
-                        tx.tx_data.set_event(S7commEvent::MalformedPdu as u8);
-                    } else {
-                        let tx = self.new_tx();
-                        tx.tx_data.set_event(S7commEvent::MalformedPdu as u8);
-                        tx.complete = true;
-                    }
+                    let tx = self.new_tx();
+                    tx.tx_data.set_event(S7commEvent::MalformedPdu as u8);
+                    tx.complete = true;
                     return AppLayerResult::err();
                 }
             }
+
+            start = &start[tpkt_len..];
 
             if self.transactions.len() >= unsafe { S7COMM_MAX_TX } {
                 if let Some(tx) = self.transactions.back_mut() {
@@ -272,44 +314,76 @@ impl S7commState {
                 return AppLayerResult::err();
             }
         }
+
+        AppLayerResult::ok()
     }
 
-    fn parse_response(&mut self, input: &[u8]) -> AppLayerResult {
+    fn parse_response(&mut self, flow: *const Flow, stream_slice: &StreamSlice) -> AppLayerResult {
+        let input = stream_slice.as_slice();
         if input.is_empty() {
             return AppLayerResult::ok();
         }
 
-        self.response_buffer.extend_from_slice(input);
-
-        // Bound pathological buffering (DoS guard).
-        if self.response_buffer.len() > unsafe { S7COMM_MAX_BUFFER } {
-            self.response_buffer.clear();
-            return AppLayerResult::err();
-        }
-
-        loop {
-            if self.response_buffer.len() < 4 {
-                return AppLayerResult::ok();
+        let mut start = input;
+        while !start.is_empty() {
+            if start.len() < 4 {
+                let consumed = input.len() - start.len();
+                return AppLayerResult::incomplete(consumed as u32, (4 - start.len()) as u32);
             }
 
-            let tpkt_len =
-                u16::from_be_bytes([self.response_buffer[2], self.response_buffer[3]]) as usize;
-            if tpkt_len < 7 {
-                self.response_buffer.clear();
+            let tpkt_len = u16::from_be_bytes([start[2], start[3]]) as usize;
+            if tpkt_len < 7 || tpkt_len > unsafe { S7COMM_MAX_BUFFER } {
                 return AppLayerResult::err();
             }
-            if self.response_buffer.len() < tpkt_len {
-                return AppLayerResult::ok();
+            if start.len() < tpkt_len {
+                let consumed = input.len() - start.len();
+                return AppLayerResult::incomplete(consumed as u32, (tpkt_len - start.len()) as u32);
             }
 
-            let pdu_data: Vec<u8> = self.response_buffer.drain(..tpkt_len).collect();
+            let pdu_data = &start[..tpkt_len];
+            self.emit_frames(flow, stream_slice, pdu_data);
 
-            match parse_s7comm_pdu(&pdu_data) {
+            match parse_s7comm_pdu(pdu_data) {
                 Ok((_, pdu)) => {
-                    self.process_response_pdu(&pdu, &pdu_data);
+                    self.process_response_pdu(&pdu, pdu_data);
                 }
                 Err(_) => {
                     return AppLayerResult::err();
+                }
+            }
+
+            start = &start[tpkt_len..];
+        }
+
+        AppLayerResult::ok()
+    }
+
+    /// Emit protocol frames for a complete PDU that lies within `stream_slice`.
+    fn emit_frames(&self, flow: *const Flow, stream_slice: &StreamSlice, pdu_data: &[u8]) {
+        // Whole TPKT/COTP/S7comm PDU frame.
+        let _ = Frame::new(
+            flow,
+            stream_slice,
+            pdu_data,
+            pdu_data.len() as i64,
+            S7commFrameType::Pdu as u8,
+            None,
+        );
+        // S7comm-portion frame (after TPKT[4] + COTP length byte + COTP body).
+        if pdu_data.len() >= 6 {
+            let cotp_len = pdu_data[4] as usize;
+            let s7_offset = 5 + cotp_len;
+            if s7_offset < pdu_data.len() {
+                let proto = pdu_data[s7_offset];
+                if proto == S7COMM_PROTOCOL_ID || proto == S7COMM_PLUS_PROTOCOL_ID {
+                    let _ = Frame::new(
+                        flow,
+                        stream_slice,
+                        &pdu_data[s7_offset..],
+                        (pdu_data.len() - s7_offset) as i64,
+                        S7commFrameType::S7comm as u8,
+                        None,
+                    );
                 }
             }
         }
@@ -330,11 +404,16 @@ impl S7commState {
             tx.is_s7comm_plus = true;
             tx.request_buffer = raw.to_vec();
             if let Some(ref sp) = pdu.s7_plus {
+                tx.s7plus_version = sp.version;
                 tx.s7plus_opcode = sp.opcode;
                 tx.s7plus_opcode_name =
                     S7PlusOpcode::from_u8(sp.opcode).map(|o| o.as_str());
-                tx.s7plus_function = sp.function;
-                tx.s7plus_function_name = Some(s7plus_function_name(sp.function));
+                tx.s7plus_has_function = sp.has_function;
+                if sp.has_function {
+                    tx.s7plus_function = sp.function;
+                    tx.s7plus_function_name = Some(s7plus_function_name(sp.function));
+                    tx.s7plus_seqnum = sp.sequence_number;
+                }
             }
             tx.tx_data.set_event(S7commEvent::S7CommPlusUsage as u8);
             tx.complete = true;
@@ -515,7 +594,7 @@ unsafe extern "C" fn s7comm_state_tx_free(state: *mut c_void, tx_id: u64) {
 }
 
 unsafe extern "C" fn s7comm_parse_request(
-    _flow: *mut Flow, state: *mut c_void, pstate: *mut AppLayerParserState,
+    flow: *mut Flow, state: *mut c_void, pstate: *mut AppLayerParserState,
     stream_slice: StreamSlice, _data: *const c_void,
 ) -> AppLayerResult {
     let eof = SCAppLayerParserStateIssetFlag(pstate, APP_LAYER_PARSER_EOF_TS) > 0;
@@ -527,12 +606,11 @@ unsafe extern "C" fn s7comm_parse_request(
     if stream_slice.is_gap() {
         return AppLayerResult::ok();
     }
-    let buf = stream_slice.as_slice();
-    state.parse_request(buf)
+    state.parse_request(flow, &stream_slice)
 }
 
 unsafe extern "C" fn s7comm_parse_response(
-    _flow: *mut Flow, state: *mut c_void, pstate: *mut AppLayerParserState,
+    flow: *mut Flow, state: *mut c_void, pstate: *mut AppLayerParserState,
     stream_slice: StreamSlice, _data: *const c_void,
 ) -> AppLayerResult {
     let _eof = SCAppLayerParserStateIssetFlag(pstate, APP_LAYER_PARSER_EOF_TC) > 0;
@@ -540,8 +618,7 @@ unsafe extern "C" fn s7comm_parse_response(
     if stream_slice.is_gap() {
         return AppLayerResult::ok();
     }
-    let buf = stream_slice.as_slice();
-    state.parse_response(buf)
+    state.parse_response(flow, &stream_slice)
 }
 
 unsafe extern "C" fn s7comm_state_get_tx(state: *mut c_void, tx_id: u64) -> *mut c_void {
@@ -600,8 +677,8 @@ pub(crate) unsafe extern "C" fn s7comm_register_parser() {
         get_state_data: s7comm_get_state_data,
         apply_tx_config: None,
         flags: APP_LAYER_PARSER_OPT_ACCEPT_GAPS,
-        get_frame_id_by_name: None,
-        get_frame_name_by_id: None,
+        get_frame_id_by_name: Some(S7commFrameType::ffi_id_from_name),
+        get_frame_name_by_id: Some(S7commFrameType::ffi_name_from_id),
         get_state_id_by_name: None,
         get_state_name_by_id: None,
     };

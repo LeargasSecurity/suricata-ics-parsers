@@ -65,8 +65,11 @@ pub struct CotpConnectInfo {
 #[derive(Debug, Clone, Default)]
 pub struct S7PlusInfo {
     pub version: u8,
+    pub data_length: u16,
     pub opcode: u8,
     pub function: u16,
+    pub sequence_number: u16,
+    pub has_function: bool,
 }
 
 /// Complete parsed S7comm PDU
@@ -279,20 +282,34 @@ fn parse_s7comm_userdata_param(input: &[u8]) -> IResult<&[u8], S7commUserdataPar
 /// Parse the S7comm-plus (v3) header for opcode and function.
 /// `input` starts at the protocol id byte (0x72).
 fn parse_s7plus(input: &[u8]) -> Option<S7PlusInfo> {
-    // 0x72, version(1), datalen(2), then opcode(1), reserved(2), function(2)...
-    if input.len() < 10 {
+    // Layout: 0x72, version(1), data_length(2), then a data area whose shape
+    // depends on the opcode:
+    //   opcode(1), reserved(2), function(2), reserved(2), seqnum(2), ...
+    if input.len() < 5 {
         return None;
     }
     let version = input[1];
-    // data starts at offset 4
+    let data_length = u16::from_be_bytes([input[2], input[3]]);
     let opcode = input[4];
-    // function is at offset 7..9 (after opcode(1) + reserved(2))
-    let function = u16::from_be_bytes([input[7], input[8]]);
-    Some(S7PlusInfo {
+
+    let mut info = S7PlusInfo {
         version,
+        data_length,
         opcode,
-        function,
-    })
+        function: 0,
+        sequence_number: 0,
+        has_function: false,
+    };
+
+    // Request (0x31) and Response (0x32) carry a function code + sequence number.
+    // Notification (0x33) has a different layout, so only decode the known ones.
+    if (opcode == 0x31 || opcode == 0x32) && input.len() >= 13 {
+        info.function = u16::from_be_bytes([input[7], input[8]]);
+        info.sequence_number = u16::from_be_bytes([input[11], input[12]]);
+        info.has_function = true;
+    }
+
+    Some(info)
 }
 
 /// Parse a complete S7comm PDU (TPKT + COTP + S7comm)
@@ -559,17 +576,20 @@ mod tests {
 
     #[test]
     fn test_parse_s7comm_plus() {
-        // S7comm-plus request, SetVariable (0x04f2)
+        // S7comm-plus request, SetVariable (0x04f2), seqnum 5
         let data: &[u8] = &[
-            0x03, 0x00, 0x00, 0x11, // TPKT len 17
+            0x03, 0x00, 0x00, 0x14, // TPKT len 20
             0x02, 0xF0, 0x80, // COTP DT
-            0x72, 0x01, 0x00, 0x1a, 0x31, 0x00, 0x00, 0x04, 0xf2, 0x00, // s7comm-plus
+            0x72, 0x01, 0x00, 0x1a, 0x31, 0x00, 0x00, 0x04, 0xf2, 0x00, 0x00, 0x00,
+            0x05, // s7comm-plus (13 bytes)
         ];
         let (_, pdu) = parse_s7comm_pdu(data).unwrap();
         assert!(pdu.is_s7comm_plus);
         let sp = pdu.s7_plus.expect("s7 plus info");
         assert_eq!(sp.opcode, 0x31);
+        assert!(sp.has_function);
         assert_eq!(sp.function, 0x04f2);
+        assert_eq!(sp.sequence_number, 5);
     }
 
     #[test]

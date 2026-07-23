@@ -1,0 +1,49 @@
+requires:
+  min-version: 8.0.0
+  plugins:
+    - s7comm
+
+args:
+  - -k none
+
+pcap: input.pcap
+rules: test.rules
+
+checks:
+  # Security userdata group (password protection) is detected and flagged
+  - filter:
+      count: 1
+      match:
+        event_type: s7comm
+        s7comm.rosctr: "Userdata"
+        s7comm.userdata_group_name: "Security"
+        s7comm.is_dangerous: true
+        s7comm.attack_technique: "T0859 Valid Accounts / T0812 Default Credentials"
+
+  # Read SZL reconnaissance is detected
+  - filter:
+      min: 1
+      match:
+        event_type: s7comm
+        s7comm.userdata_group_name: "CPU Functions"
+
+  # Security access rule fires
+  - filter:
+      min: 1
+      match:
+        event_type: alert
+        alert.signature_id: 3700102
+
+  # SZL recon rule fires
+  - filter:
+      min: 1
+      match:
+        event_type: alert
+        alert.signature_id: 3700103
+
+  # Frame-based rule fires (validates frame registration)
+  - filter:
+      min: 1
+      match:
+        event_type: alert
+        alert.signature_id: 3700300

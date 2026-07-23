@@ -126,15 +126,19 @@ fn log_s7comm(tx: &S7commTransaction, js: &mut SCJsonBuilderWrapper) -> Result<(
     if tx.is_s7comm_plus {
         js.set_bool("s7comm_plus", true)?;
         js.open_object("plus")?;
+        js.set_uint("version", tx.s7plus_version as u64)?;
         js.set_uint("opcode", tx.s7plus_opcode as u64)?;
         if let Some(oname) = tx.s7plus_opcode_name {
             js.set_string("opcode_name", oname)?;
         }
-        js.set_uint("function", tx.s7plus_function as u64)?;
-        let fhex = format!("0x{:04x}", tx.s7plus_function);
-        js.set_string("function_hex", &fhex)?;
-        if let Some(fname) = tx.s7plus_function_name {
-            js.set_string("function_name", fname)?;
+        if tx.s7plus_has_function {
+            js.set_uint("function", tx.s7plus_function as u64)?;
+            let fhex = format!("0x{:04x}", tx.s7plus_function);
+            js.set_string("function_hex", &fhex)?;
+            if let Some(fname) = tx.s7plus_function_name {
+                js.set_string("function_name", fname)?;
+            }
+            js.set_uint("sequence_number", tx.s7plus_seqnum as u64)?;
         }
         js.close()?;
     }

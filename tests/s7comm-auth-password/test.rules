@@ -1,0 +1,11 @@
+alert s7comm any any -> any 102 (msg:"S7COMM Security Function Access"; \
+    s7comm.rosctr:7; s7comm.userdata_group:5; \
+    classtype:attempted-admin; sid:3700102; rev:1;)
+
+alert s7comm any any -> any 102 (msg:"S7COMM Read SZL (System Enumeration)"; \
+    s7comm.rosctr:7; s7comm.userdata_group:4; s7comm.subfunction:1; \
+    classtype:attempted-recon; sid:3700103; rev:1;)
+
+alert s7comm any any -> any 102 (msg:"S7COMM PDU frame carries TPKT"; \
+    frame:s7comm.pdu; content:"|03 00|"; startswith; \
+    classtype:protocol-command-decode; sid:3700300; rev:1;)
