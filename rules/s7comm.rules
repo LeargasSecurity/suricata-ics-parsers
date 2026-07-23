@@ -1,0 +1,123 @@
+# S7comm Suricata Detection Rules
+# Copyright (C) 2026 Critical Path Security
+# License: GPL-2.0
+#
+# These rules require the suricata-s7comm app-layer parser plugin.
+# Keywords: s7comm.function_code, s7comm.rosctr, s7comm.dangerous,
+#           s7comm.userdata_group, s7comm.subfunction, s7comm.plus
+
+# ============================================================================
+# ATT&CK ICS: T0858 Change Operating Mode / T0814 Denial of Service
+# ============================================================================
+
+alert s7comm any any -> any 102 (msg:"S7COMM PLC Stop Command"; \
+    s7comm.function_code:0x29; s7comm.rosctr:1; \
+    classtype:attempted-dos; \
+    metadata:attack_target ICS, mitre_attack_technique T0858, mitre_attack_technique T0814; \
+    sid:3700001; rev:1;)
+
+alert s7comm any any -> any 102 (msg:"S7COMM PLC Control (Mode Change)"; \
+    s7comm.function_code:0x28; s7comm.rosctr:1; \
+    classtype:attempted-admin; \
+    metadata:attack_target ICS, mitre_attack_technique T0858; \
+    sid:3700002; rev:1;)
+
+# ============================================================================
+# ATT&CK ICS: T0843 Program Download
+# ============================================================================
+
+alert s7comm any any -> any 102 (msg:"S7COMM Request Download (Program Transfer)"; \
+    s7comm.function_code:0x1a; s7comm.rosctr:1; \
+    classtype:attempted-admin; \
+    metadata:attack_target ICS, mitre_attack_technique T0843; \
+    sid:3700003; rev:1;)
+
+alert s7comm any any -> any 102 (msg:"S7COMM Download Block"; \
+    s7comm.function_code:0x1b; s7comm.rosctr:1; \
+    classtype:attempted-admin; \
+    metadata:attack_target ICS, mitre_attack_technique T0843; \
+    sid:3700004; rev:1;)
+
+alert s7comm any any -> any 102 (msg:"S7COMM Download Ended"; \
+    s7comm.function_code:0x1c; s7comm.rosctr:1; \
+    classtype:attempted-admin; \
+    metadata:attack_target ICS, mitre_attack_technique T0843; \
+    sid:3700005; rev:1;)
+
+# ============================================================================
+# ATT&CK ICS: T0845 Program Upload
+# ============================================================================
+
+alert s7comm any any -> any 102 (msg:"S7COMM Start Upload (Program Exfiltration)"; \
+    s7comm.function_code:0x1d; s7comm.rosctr:1; \
+    classtype:attempted-admin; \
+    metadata:attack_target ICS, mitre_attack_technique T0845; \
+    sid:3700006; rev:1;)
+
+alert s7comm any any -> any 102 (msg:"S7COMM Upload Block"; \
+    s7comm.function_code:0x1e; s7comm.rosctr:1; \
+    classtype:attempted-admin; \
+    metadata:attack_target ICS, mitre_attack_technique T0845; \
+    sid:3700007; rev:1;)
+
+alert s7comm any any -> any 102 (msg:"S7COMM End Upload"; \
+    s7comm.function_code:0x1f; s7comm.rosctr:1; \
+    classtype:attempted-admin; \
+    metadata:attack_target ICS, mitre_attack_technique T0845; \
+    sid:3700008; rev:1;)
+
+# ============================================================================
+# ATT&CK ICS: T0836 Modify Parameter
+# ============================================================================
+
+alert s7comm any any -> any 102 (msg:"S7COMM Write Variable"; \
+    s7comm.function_code:0x05; s7comm.rosctr:1; \
+    classtype:attempted-admin; \
+    metadata:attack_target ICS, mitre_attack_technique T0836; \
+    sid:3700009; rev:1;)
+
+# ============================================================================
+# ATT&CK ICS: T0886 Remote Services
+# ============================================================================
+
+alert s7comm any any -> any 102 (msg:"S7COMM Setup Communication (New Session)"; \
+    s7comm.function_code:0xf0; s7comm.rosctr:1; \
+    classtype:protocol-command-decode; \
+    metadata:attack_target ICS, mitre_attack_technique T0886; \
+    sid:3700010; rev:1;)
+
+# ============================================================================
+# Catch-all for any dangerous operation
+# ============================================================================
+
+alert s7comm any any -> any 102 (msg:"S7COMM Dangerous Operation Detected"; \
+    s7comm.dangerous; s7comm.rosctr:1; \
+    classtype:attempted-admin; \
+    metadata:attack_target ICS; \
+    sid:3700099; rev:1;)
+
+# ============================================================================
+# S7comm-plus detection (newer Siemens PLCs - S7-1200/1500)
+# ============================================================================
+
+alert s7comm any any -> any 102 (msg:"S7COMM-Plus Protocol Detected"; \
+    s7comm.plus; \
+    classtype:protocol-command-decode; \
+    metadata:attack_target ICS; \
+    sid:3700100; rev:1;)
+
+# ============================================================================
+# Userdata function groups (diagnostics, programmer access)
+# ============================================================================
+
+alert s7comm any any -> any 102 (msg:"S7COMM Programmer Commands (Userdata)"; \
+    s7comm.rosctr:7; s7comm.userdata_group:1; \
+    classtype:attempted-admin; \
+    metadata:attack_target ICS, mitre_attack_technique T0843; \
+    sid:3700101; rev:1;)
+
+alert s7comm any any -> any 102 (msg:"S7COMM Security Function Access"; \
+    s7comm.rosctr:7; s7comm.userdata_group:5; \
+    classtype:attempted-admin; \
+    metadata:attack_target ICS, mitre_attack_technique T0859; \
+    sid:3700102; rev:1;)

@@ -1,0 +1,20 @@
+[package]
+name = "suricata-s7comm"
+version = "0.1.0"
+edition = "2024"
+authors = ["Critical Path Security <patrick.kelley@criticalpathsecurity.com>"]
+description = "Suricata S7comm/S7comm-plus ICS protocol parser"
+license = "GPL-2.0"
+
+[lib]
+name = "suricata_s7comm"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+nom = "7"
+num-derive = "0.4"
+num-traits = "0.2"
+log = "0.4"
+
+[build-dependencies]
+cbindgen = "0.29"
