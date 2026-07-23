@@ -39,14 +39,104 @@ pub struct S7commUserdataParam {
     pub sequence_number: u8,
 }
 
+/// A single data item address specification (Read/Write Variable, S7ANY addressing)
+#[derive(Debug, Clone, Default)]
+pub struct S7DataItem {
+    pub transport_size: u8,
+    pub length: u16,
+    pub db_number: u16,
+    pub area: u8,
+    /// Byte address (already shifted from bit address)
+    pub byte_address: u32,
+    pub bit_address: u8,
+}
+
+/// COTP connection info (from CR/CC parameters)
+#[derive(Debug, Clone, Default)]
+pub struct CotpConnectInfo {
+    pub src_tsap: Option<u16>,
+    pub dst_tsap: Option<u16>,
+    /// Derived from destination TSAP low byte
+    pub rack: Option<u8>,
+    pub slot: Option<u8>,
+}
+
+/// S7comm-plus (v3) info
+#[derive(Debug, Clone, Default)]
+pub struct S7PlusInfo {
+    pub version: u8,
+    pub opcode: u8,
+    pub function: u16,
+}
+
 /// Complete parsed S7comm PDU
 #[derive(Debug, Clone)]
 pub struct S7commPdu {
     pub cotp_type: u8,
+    pub cotp_connect: Option<CotpConnectInfo>,
     pub s7_header: Option<S7commHeader>,
     pub s7_parameter: Option<S7commParameter>,
     pub s7_userdata: Option<S7commUserdataParam>,
+    /// First data item from Read/Write Var requests
+    pub data_item: Option<S7DataItem>,
+    /// PLC control PI-service string (function 0x28)
+    pub plc_control_service: Option<&'static str>,
+    /// Userdata data payload return code (after userdata parameter)
+    pub userdata_return_code: Option<u8>,
     pub is_s7comm_plus: bool,
+    pub s7_plus: Option<S7PlusInfo>,
+}
+
+impl Default for S7commPdu {
+    fn default() -> Self {
+        Self {
+            cotp_type: 0,
+            cotp_connect: None,
+            s7_header: None,
+            s7_parameter: None,
+            s7_userdata: None,
+            data_item: None,
+            plc_control_service: None,
+            userdata_return_code: None,
+            is_s7comm_plus: false,
+            s7_plus: None,
+        }
+    }
+}
+
+/// Parse COTP CR/CC parameters to extract TSAPs (rack/slot).
+/// `input` is the bytes after the COTP fixed header (dst_ref, src_ref, class).
+fn parse_cotp_params(mut input: &[u8]) -> CotpConnectInfo {
+    let mut info = CotpConnectInfo::default();
+    // Parameters are TLV: param_code(1), param_len(1), value(param_len)
+    while input.len() >= 2 {
+        let code = input[0];
+        let len = input[1] as usize;
+        if input.len() < 2 + len {
+            break;
+        }
+        let value = &input[2..2 + len];
+        match code {
+            COTP_PARAM_SRC_TSAP => {
+                if len == 2 {
+                    info.src_tsap = Some(u16::from_be_bytes([value[0], value[1]]));
+                }
+            }
+            COTP_PARAM_DST_TSAP => {
+                if len == 2 {
+                    let tsap = u16::from_be_bytes([value[0], value[1]]);
+                    info.dst_tsap = Some(tsap);
+                    // Low byte encodes rack (high 3 bits) and slot (low 5 bits)
+                    let low = (tsap & 0xff) as u8;
+                    info.rack = Some(low >> 5);
+                    info.slot = Some(low & 0x1f);
+                }
+            }
+            _ => {}
+        }
+        input = &input[2 + len..];
+    }
+    info
 }
 
 /// Parse S7comm header (10 or 12 bytes depending on ROSCTR)
@@ -98,6 +188,43 @@ fn parse_s7comm_parameter(input: &[u8], length: u16) -> IResult<&[u8], S7commPar
     ))
 }
 
+/// Parse the first S7ANY data item from a Read/Write Var parameter body.
+/// `data` is the parameter bytes after the function code (starts with item count).
+fn parse_first_data_item(data: &[u8]) -> Option<S7DataItem> {
+    if data.len() < 2 {
+        return None;
+    }
+    let item_count = data[0];
+    if item_count == 0 {
+        return None;
+    }
+    let item = &data[1..];
+    // S7ANY item: 0x12, len(0x0a), 0x10(syntax S7ANY), transport(1), length(2),
+    // db(2), area(1), address(3)
+    if item.len() < 12 {
+        return None;
+    }
+    if item[0] != 0x12 || item[2] != 0x10 {
+        // Not S7ANY addressing (could be symbolic/other); skip detailed parse
+        return None;
+    }
+    let transport_size = item[3];
+    let length = u16::from_be_bytes([item[4], item[5]]);
+    let db_number = u16::from_be_bytes([item[6], item[7]]);
+    let area = item[8];
+    let addr_raw = ((item[9] as u32) << 16) | ((item[10] as u32) << 8) | (item[11] as u32);
+    let byte_address = addr_raw >> 3;
+    let bit_address = (addr_raw & 0x07) as u8;
+    Some(S7DataItem {
+        transport_size,
+        length,
+        db_number,
+        area,
+        byte_address,
+        bit_address,
+    })
+}
+
 /// Parse S7comm Userdata parameter header
 fn parse_s7comm_userdata_param(input: &[u8]) -> IResult<&[u8], S7commUserdataParam> {
     let (input, h0) = be_u8(input)?;
@@ -121,6 +248,25 @@ fn parse_s7comm_userdata_param(input: &[u8]) -> IResult<&[u8], S7commUserdataPar
     ))
 }
 
+/// Parse the S7comm-plus (v3) header for opcode and function.
+/// `input` starts at the protocol id byte (0x72).
+fn parse_s7plus(input: &[u8]) -> Option<S7PlusInfo> {
+    // 0x72, version(1), datalen(2), then opcode(1), reserved(2), function(2)...
+    if input.len() < 10 {
+        return None;
+    }
+    let version = input[1];
+    // data starts at offset 4
+    let opcode = input[4];
+    // function is at offset 7..9 (after opcode(1) + reserved(2))
+    let function = u16::from_be_bytes([input[7], input[8]]);
+    Some(S7PlusInfo {
+        version,
+        opcode,
+        function,
+    })
+}
+
 /// Parse a complete S7comm PDU (TPKT + COTP + S7comm)
 pub(crate) fn parse_s7comm_pdu(input: &[u8]) -> IResult<&[u8], S7commPdu> {
     // Parse TPKT header
@@ -133,6 +279,22 @@ pub(crate) fn parse_s7comm_pdu(input: &[u8]) -> IResult<&[u8], S7commPdu> {
     let (input, cotp_type_raw) = be_u8(input)?;
     let cotp_type = cotp_type_raw & 0xF0;
 
+    // For CR/CC, extract TSAP params. COTP CR/CC fixed part after type:
+    // dst_ref(2), src_ref(2), class(1) = 5 bytes, then variable params.
+    if cotp_type == COTP_CR || cotp_type == COTP_CC {
+        let hdr_remaining = cotp_length.saturating_sub(1) as usize;
+        let (input, cotp_body) = take(hdr_remaining)(input)?;
+        let mut pdu = S7commPdu {
+            cotp_type,
+            ..Default::default()
+        };
+        // Skip dst_ref(2) + src_ref(2) + class(1) = 5 bytes to reach params
+        if cotp_body.len() > 5 {
+            pdu.cotp_connect = Some(parse_cotp_params(&cotp_body[5..]));
+        }
+        return Ok((input, pdu));
+    }
+
     let cotp_remaining = cotp_length.saturating_sub(1);
     let (input, _) = take(cotp_remaining as usize)(input)?;
 
@@ -142,10 +304,7 @@ pub(crate) fn parse_s7comm_pdu(input: &[u8]) -> IResult<&[u8], S7commPdu> {
             input,
             S7commPdu {
                 cotp_type,
-                s7_header: None,
-                s7_parameter: None,
-                s7_userdata: None,
-                is_s7comm_plus: false,
+                ..Default::default()
             },
         ));
     }
@@ -155,10 +314,7 @@ pub(crate) fn parse_s7comm_pdu(input: &[u8]) -> IResult<&[u8], S7commPdu> {
             input,
             S7commPdu {
                 cotp_type,
-                s7_header: None,
-                s7_parameter: None,
-                s7_userdata: None,
-                is_s7comm_plus: false,
+                ..Default::default()
             },
         ));
     }
@@ -171,28 +327,28 @@ pub(crate) fn parse_s7comm_pdu(input: &[u8]) -> IResult<&[u8], S7commPdu> {
             input,
             S7commPdu {
                 cotp_type,
-                s7_header: None,
-                s7_parameter: None,
-                s7_userdata: None,
-                is_s7comm_plus: false,
+                ..Default::default()
             },
         ));
     }
 
     if is_s7comm_plus {
+        let s7_plus = parse_s7plus(input);
         return Ok((
             &[],
             S7commPdu {
                 cotp_type,
-                s7_header: None,
-                s7_parameter: None,
-                s7_userdata: None,
                 is_s7comm_plus: true,
+                s7_plus,
+                ..Default::default()
             },
         ));
     }
 
     let (input, s7_header) = parse_s7comm_header(input)?;
+
+    let mut data_item = None;
+    let mut plc_ctrl_service = None;
 
     let (input, s7_parameter, s7_userdata) = if s7_header.rosctr == 0x07 {
         if s7_header.parameter_length >= 8 {
@@ -206,10 +362,26 @@ pub(crate) fn parse_s7comm_pdu(input: &[u8]) -> IResult<&[u8], S7commPdu> {
         }
     } else if s7_header.parameter_length > 0 {
         let (input, param) = parse_s7comm_parameter(input, s7_header.parameter_length)?;
+        // Extract data item for Read/Write Var requests (Job)
+        if s7_header.rosctr == 0x01
+            && (param.function_code == 0x04 || param.function_code == 0x05)
+        {
+            data_item = parse_first_data_item(&param.data);
+        }
+        // Extract PLC control service string for function 0x28
+        if param.function_code == 0x28 {
+            plc_ctrl_service = Some(plc_control_service(&param.data));
+        }
         (input, Some(param), None)
     } else {
         (input, None, None)
     };
+
+    // Read userdata return code (first byte of data section for userdata)
+    let mut userdata_return_code = None;
+    if s7_userdata.is_some() && !input.is_empty() {
+        userdata_return_code = Some(input[0]);
+    }
 
     let (input, _) = take(s7_header.data_length as usize)(input)?;
 
@@ -217,10 +389,15 @@ pub(crate) fn parse_s7comm_pdu(input: &[u8]) -> IResult<&[u8], S7commPdu> {
         input,
         S7commPdu {
             cotp_type,
+            cotp_connect: None,
             s7_header: Some(s7_header),
             s7_parameter,
             s7_userdata,
+            data_item,
+            plc_control_service: plc_ctrl_service,
+            userdata_return_code,
             is_s7comm_plus,
+            s7_plus: None,
         },
     ))
 }

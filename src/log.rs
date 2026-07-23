@@ -77,7 +77,38 @@ fn log_s7comm(tx: &S7commTransaction, js: &mut SCJsonBuilderWrapper) -> Result<(
 
     if tx.request_userdata_group != 0 {
         js.set_uint("userdata_group", tx.request_userdata_group as u64)?;
+        if let Some(gname) = tx.request_userdata_group_name {
+            js.set_string("userdata_group_name", gname)?;
+        }
         js.set_uint("userdata_subfunction", tx.request_userdata_subfunction as u64)?;
+    }
+
+    // Data item (Read/Write Variable addressing)
+    if tx.has_data_item {
+        js.open_object("item")?;
+        js.set_uint("area", tx.item_area as u64)?;
+        if let Some(aname) = tx.item_area_name {
+            js.set_string("area_name", aname)?;
+        }
+        js.set_uint("db_number", tx.item_db_number as u64)?;
+        js.set_uint("address", tx.item_address as u64)?;
+        js.set_uint("length", tx.item_length as u64)?;
+        js.close()?;
+    }
+
+    // COTP connection addressing (rack/slot)
+    if tx.has_tsap {
+        js.open_object("cotp")?;
+        js.set_uint("src_tsap", tx.src_tsap as u64)?;
+        js.set_uint("dst_tsap", tx.dst_tsap as u64)?;
+        js.set_uint("rack", tx.rack as u64)?;
+        js.set_uint("slot", tx.slot as u64)?;
+        js.close()?;
+    }
+
+    // PLC control service
+    if let Some(svc) = tx.plc_control_service {
+        js.set_string("plc_control_service", svc)?;
     }
 
     js.set_bool("is_dangerous", tx.is_dangerous)?;
@@ -93,6 +124,18 @@ fn log_s7comm(tx: &S7commTransaction, js: &mut SCJsonBuilderWrapper) -> Result<(
 
     if tx.is_s7comm_plus {
         js.set_bool("s7comm_plus", true)?;
+        js.open_object("plus")?;
+        js.set_uint("opcode", tx.s7plus_opcode as u64)?;
+        if let Some(oname) = tx.s7plus_opcode_name {
+            js.set_string("opcode_name", oname)?;
+        }
+        js.set_uint("function", tx.s7plus_function as u64)?;
+        let fhex = format!("0x{:04x}", tx.s7plus_function);
+        js.set_string("function_hex", &fhex)?;
+        if let Some(fname) = tx.s7plus_function_name {
+            js.set_string("function_name", fname)?;
+        }
+        js.close()?;
     }
 
     js.close()?;

@@ -4,7 +4,6 @@
 
 use crate::consts::*;
 use crate::parser::*;
-use nom7 as nom;
 use std::collections::VecDeque;
 use std::ffi::CString;
 use std::os::raw::{c_char, c_int, c_void};
@@ -14,9 +13,10 @@ use suricata::applayer::{
     RustParser, State, StreamSlice, Transaction, APP_LAYER_PARSER_EOF_TC, APP_LAYER_PARSER_EOF_TS,
     APP_LAYER_PARSER_OPT_ACCEPT_GAPS,
 };
+use suricata::conf::conf_get;
 use suricata::core::{ALPROTO_UNKNOWN, IPPROTO_TCP};
 use suricata::{
-    build_slice, cast_pointer, export_state_data_get, export_tx_data_get, SCLogNotice,
+    build_slice, cast_pointer, export_state_data_get, export_tx_data_get, SCLogError, SCLogNotice,
 };
 use suricata_sys::sys::{
     AppLayerParserState, AppProto, Flow, SCAppLayerParserConfParserEnabled,
@@ -26,14 +26,22 @@ use suricata_sys::sys::{
 
 pub(crate) static mut ALPROTO_S7COMM: AppProto = ALPROTO_UNKNOWN;
 
+/// Maximum number of live transactions before we force an error (DoS guard).
+static mut S7COMM_MAX_TX: usize = 1024;
+
 #[derive(AppLayerEvent)]
 pub(crate) enum S7commEvent {
     MalformedPdu,
+    InvalidProtocolId,
     PlcStop,
     PlcModeChange,
     ProgramDownload,
     ProgramUpload,
     WriteVariable,
+    ReadSzl,
+    PasswordAccess,
+    S7CommPlusUsage,
+    TooManyTransactions,
 }
 
 pub(crate) struct S7commTransaction {
@@ -44,17 +52,46 @@ pub(crate) struct S7commTransaction {
     pub request_function_code: u8,
     pub request_function_name: Option<&'static str>,
     pub request_userdata_group: u8,
+    pub request_userdata_group_name: Option<&'static str>,
     pub request_userdata_subfunction: u8,
 
     pub response_rosctr: u8,
     pub response_error_class: u8,
     pub response_error_code: u8,
 
+    // Data item (Read/Write Variable)
+    pub has_data_item: bool,
+    pub item_area: u8,
+    pub item_area_name: Option<&'static str>,
+    pub item_db_number: u16,
+    pub item_address: u32,
+    pub item_length: u16,
+
+    // COTP connection info (rack/slot addressing)
+    pub src_tsap: u16,
+    pub dst_tsap: u16,
+    pub rack: u8,
+    pub slot: u8,
+    pub has_tsap: bool,
+
+    // PLC control
+    pub plc_control_service: Option<&'static str>,
+
+    // S7comm-plus
+    pub is_s7comm_plus: bool,
+    pub s7plus_opcode: u8,
+    pub s7plus_opcode_name: Option<&'static str>,
+    pub s7plus_function: u16,
+    pub s7plus_function_name: Option<&'static str>,
+
     pub is_dangerous: bool,
     pub attack_technique: Option<&'static str>,
-    pub is_s7comm_plus: bool,
 
     pub complete: bool,
+
+    /// Raw request/response payload for sticky-buffer matching
+    pub request_buffer: Vec<u8>,
+    pub response_buffer: Vec<u8>,
 
     tx_data: AppLayerTxData,
 }
@@ -74,14 +111,33 @@ impl S7commTransaction {
             request_function_code: 0,
             request_function_name: None,
             request_userdata_group: 0,
+            request_userdata_group_name: None,
             request_userdata_subfunction: 0,
             response_rosctr: 0,
             response_error_class: 0,
             response_error_code: 0,
+            has_data_item: false,
+            item_area: 0,
+            item_area_name: None,
+            item_db_number: 0,
+            item_address: 0,
+            item_length: 0,
+            src_tsap: 0,
+            dst_tsap: 0,
+            rack: 0,
+            slot: 0,
+            has_tsap: false,
+            plc_control_service: None,
+            is_s7comm_plus: false,
+            s7plus_opcode: 0,
+            s7plus_opcode_name: None,
+            s7plus_function: 0,
+            s7plus_function_name: None,
             is_dangerous: false,
             attack_technique: None,
-            is_s7comm_plus: false,
             complete: false,
+            request_buffer: Vec::new(),
+            response_buffer: Vec::new(),
             tx_data: AppLayerTxData::new(),
         }
     }
@@ -100,6 +156,12 @@ pub(crate) struct S7commState {
     transactions: VecDeque<S7commTransaction>,
     request_buffer: Vec<u8>,
     response_buffer: Vec<u8>,
+    // Connection-level TSAP info learned from COTP CR/CC
+    conn_src_tsap: u16,
+    conn_dst_tsap: u16,
+    conn_rack: u8,
+    conn_slot: u8,
+    conn_has_tsap: bool,
     cotp_connected: bool,
 }
 
@@ -119,17 +181,7 @@ impl S7commState {
     }
 
     fn free_tx(&mut self, tx_id: u64) {
-        let len = self.transactions.len();
-        let mut found = false;
-        let mut index = 0;
-        for i in 0..len {
-            if self.transactions[i].tx_id == tx_id + 1 {
-                found = true;
-                index = i;
-                break;
-            }
-        }
-        if found {
+        if let Some(index) = self.transactions.iter().position(|tx| tx.tx_id == tx_id + 1) {
             self.transactions.remove(index);
         }
     }
@@ -142,6 +194,14 @@ impl S7commState {
         self.tx_id += 1;
         let mut tx = S7commTransaction::new();
         tx.tx_id = self.tx_id;
+        // Inherit learned connection addressing
+        if self.conn_has_tsap {
+            tx.src_tsap = self.conn_src_tsap;
+            tx.dst_tsap = self.conn_dst_tsap;
+            tx.rack = self.conn_rack;
+            tx.slot = self.conn_slot;
+            tx.has_tsap = true;
+        }
         self.transactions.push_back(tx);
         self.transactions.back_mut().unwrap()
     }
@@ -179,11 +239,25 @@ impl S7commState {
 
             match parse_s7comm_pdu(&pdu_data) {
                 Ok((_, pdu)) => {
-                    self.process_request_pdu(&pdu);
+                    self.process_request_pdu(&pdu, &pdu_data);
                 }
                 Err(_) => {
+                    if let Some(tx) = self.transactions.back_mut() {
+                        tx.tx_data.set_event(S7commEvent::MalformedPdu as u8);
+                    } else {
+                        let tx = self.new_tx();
+                        tx.tx_data.set_event(S7commEvent::MalformedPdu as u8);
+                        tx.complete = true;
+                    }
                     return AppLayerResult::err();
                 }
+            }
+
+            if self.transactions.len() >= unsafe { S7COMM_MAX_TX } {
+                if let Some(tx) = self.transactions.back_mut() {
+                    tx.tx_data.set_event(S7commEvent::TooManyTransactions as u8);
+                }
+                return AppLayerResult::err();
             }
         }
     }
@@ -214,7 +288,7 @@ impl S7commState {
 
             match parse_s7comm_pdu(&pdu_data) {
                 Ok((_, pdu)) => {
-                    self.process_response_pdu(&pdu);
+                    self.process_response_pdu(&pdu, &pdu_data);
                 }
                 Err(_) => {
                     return AppLayerResult::err();
@@ -223,15 +297,28 @@ impl S7commState {
         }
     }
 
-    fn process_request_pdu(&mut self, pdu: &S7commPdu) {
+    fn process_request_pdu(&mut self, pdu: &S7commPdu, raw: &[u8]) {
+        // COTP connection request: learn TSAP/rack/slot
         if pdu.cotp_type == COTP_CR {
             self.cotp_connected = false;
+            if let Some(ref conn) = pdu.cotp_connect {
+                self.learn_tsap(conn);
+            }
             return;
         }
 
         if pdu.is_s7comm_plus {
             let tx = self.new_tx();
             tx.is_s7comm_plus = true;
+            tx.request_buffer = raw.to_vec();
+            if let Some(ref sp) = pdu.s7_plus {
+                tx.s7plus_opcode = sp.opcode;
+                tx.s7plus_opcode_name =
+                    S7PlusOpcode::from_u8(sp.opcode).map(|o| o.as_str());
+                tx.s7plus_function = sp.function;
+                tx.s7plus_function_name = Some(s7plus_function_name(sp.function));
+            }
+            tx.tx_data.set_event(S7commEvent::S7CommPlusUsage as u8);
             tx.complete = true;
             return;
         }
@@ -242,6 +329,20 @@ impl S7commState {
                     let tx = self.new_tx();
                     tx.pdu_reference = header.pdu_reference;
                     tx.request_rosctr = header.rosctr;
+                    tx.request_buffer = raw.to_vec();
+
+                    // Data item (Read/Write Variable)
+                    if let Some(ref item) = pdu.data_item {
+                        tx.has_data_item = true;
+                        tx.item_area = item.area;
+                        tx.item_area_name = S7Area::from_u8(item.area).map(|a| a.as_str());
+                        tx.item_db_number = item.db_number;
+                        tx.item_address = item.byte_address;
+                        tx.item_length = item.length;
+                    }
+
+                    // PLC control service string
+                    tx.plc_control_service = pdu.plc_control_service;
 
                     if let Some(ref param) = pdu.s7_parameter {
                         tx.request_function_code = param.function_code;
@@ -282,11 +383,30 @@ impl S7commState {
                     let tx = self.new_tx();
                     tx.pdu_reference = header.pdu_reference;
                     tx.request_rosctr = header.rosctr;
+                    tx.request_buffer = raw.to_vec();
 
                     if let Some(ref ud) = pdu.s7_userdata {
                         let group = ud.function_type & 0x0F;
                         tx.request_userdata_group = group;
+                        tx.request_userdata_group_name =
+                            S7UserdataGroup::from_u8(group).map(|g| g.as_str());
                         tx.request_userdata_subfunction = ud.subfunction;
+
+                        // Security group access (password functions)
+                        if group == S7UserdataGroup::Security as u8 {
+                            tx.is_dangerous = true;
+                            tx.attack_technique =
+                                Some("T0859 Valid Accounts / T0812 Default Credentials");
+                            tx.tx_data.set_event(S7commEvent::PasswordAccess as u8);
+                        }
+
+                        // Read SZL (CPU functions group 4, subfunc 1) = reconnaissance
+                        if group == S7UserdataGroup::CpuFunctions as u8
+                            && ud.subfunction == S7_CPU_READ_SZL
+                        {
+                            tx.attack_technique = Some("T0888 Remote System Information Discovery");
+                            tx.tx_data.set_event(S7commEvent::ReadSzl as u8);
+                        }
                     }
                     tx.complete = true;
                 }
@@ -295,9 +415,12 @@ impl S7commState {
         }
     }
 
-    fn process_response_pdu(&mut self, pdu: &S7commPdu) {
+    fn process_response_pdu(&mut self, pdu: &S7commPdu, raw: &[u8]) {
         if pdu.cotp_type == COTP_CC {
             self.cotp_connected = true;
+            if let Some(ref conn) = pdu.cotp_connect {
+                self.learn_tsap(conn);
+            }
             return;
         }
 
@@ -307,10 +430,29 @@ impl S7commState {
                     tx.response_rosctr = header.rosctr;
                     tx.response_error_class = header.error_class.unwrap_or(0);
                     tx.response_error_code = header.error_code.unwrap_or(0);
+                    tx.response_buffer = raw.to_vec();
                     tx.complete = true;
                     tx.tx_data.updated_tc = true;
                 }
             }
+        }
+    }
+
+    fn learn_tsap(&mut self, conn: &CotpConnectInfo) {
+        if let Some(src) = conn.src_tsap {
+            self.conn_src_tsap = src;
+        }
+        if let Some(dst) = conn.dst_tsap {
+            self.conn_dst_tsap = dst;
+        }
+        if let Some(rack) = conn.rack {
+            self.conn_rack = rack;
+        }
+        if let Some(slot) = conn.slot {
+            self.conn_slot = slot;
+        }
+        if conn.src_tsap.is_some() || conn.dst_tsap.is_some() {
+            self.conn_has_tsap = true;
         }
     }
 }
@@ -442,6 +584,14 @@ pub(crate) unsafe extern "C" fn s7comm_register_parser() {
         ALPROTO_S7COMM = alproto;
         if SCAppLayerParserConfParserEnabled(ip_proto_str.as_ptr(), parser.name) != 0 {
             let _ = AppLayerRegisterParser(&parser, alproto);
+        }
+        // Optional config: app-layer.protocols.s7comm.max-tx
+        if let Some(val) = conf_get("app-layer.protocols.s7comm.max-tx") {
+            if let Ok(v) = val.parse::<usize>() {
+                S7COMM_MAX_TX = v;
+            } else {
+                SCLogError!("Invalid value for s7comm.max-tx");
+            }
         }
         SCAppLayerParserRegisterLogger(IPPROTO_TCP, ALPROTO_S7COMM);
         SCLogNotice!("S7comm parser registered.");

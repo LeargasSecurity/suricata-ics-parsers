@@ -1,0 +1,26 @@
+requires:
+  min-version: 8.0.0
+  plugins:
+    - s7comm
+
+args:
+  - -k none
+
+pcap: input.pcap
+rules: test.rules
+
+checks:
+  # Read SZL reconnaissance is detected via userdata group/subfunction keywords
+  - filter:
+      min: 1
+      match:
+        event_type: alert
+        alert.signature_id: 3700103
+
+  # Userdata group name is resolved in the EVE log
+  - filter:
+      min: 1
+      match:
+        event_type: s7comm
+        s7comm.rosctr: "Userdata"
+        s7comm.userdata_group_name: "CPU Functions"

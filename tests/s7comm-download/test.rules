@@ -1,0 +1,11 @@
+alert s7comm any any -> any 102 (msg:"S7COMM Request Download (Program Transfer)"; \
+    s7comm.function_code:0x1a; s7comm.rosctr:1; \
+    classtype:attempted-admin; sid:3700003; rev:1;)
+
+alert s7comm any any -> any 102 (msg:"S7COMM Setup Communication (New Session)"; \
+    s7comm.function_code:0xf0; s7comm.rosctr:1; \
+    classtype:protocol-command-decode; sid:3700010; rev:1;)
+
+alert s7comm any any -> any 102 (msg:"S7COMM Dangerous Operation Detected"; \
+    s7comm.dangerous; s7comm.rosctr:1; \
+    classtype:attempted-admin; sid:3700099; rev:1;)

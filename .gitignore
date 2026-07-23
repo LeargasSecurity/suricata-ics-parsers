@@ -1,1 +1,4 @@
-target/\n*.so\n*.dylib
+target/
+*.so
+*.dylib
+

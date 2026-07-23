@@ -10,11 +10,155 @@ pub const COTP_CR: u8 = 0xE0; // Connection Request
 pub const COTP_CC: u8 = 0xD0; // Connection Confirm
 pub const COTP_DT: u8 = 0xF0; // Data Transfer
 
+/// COTP parameter codes (in CR/CC PDUs)
+pub const COTP_PARAM_TPDU_SIZE: u8 = 0xC0;
+pub const COTP_PARAM_SRC_TSAP: u8 = 0xC1;
+pub const COTP_PARAM_DST_TSAP: u8 = 0xC2;
+
 /// S7comm protocol ID
 pub const S7COMM_PROTOCOL_ID: u8 = 0x32;
 
 /// S7comm-plus protocol ID
 pub const S7COMM_PLUS_PROTOCOL_ID: u8 = 0x72;
+
+/// S7comm memory area codes (used in item address specification)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum S7Area {
+    SystemInfo = 0x03,   // System info of 200 family
+    SystemFlags = 0x05,  // System flags of 200 family
+    AnalogInputs = 0x06, // Analog inputs of 200 family
+    AnalogOutputs = 0x07,
+    Counter = 0x1C,   // S7 counters
+    Timer = 0x1D,     // S7 timers
+    Counter200 = 0x1E,
+    Timer200 = 0x1F,
+    DataRecord = 0x21, // Direct peripheral access / data blocks (P)
+    Inputs = 0x81,     // I - process inputs
+    Outputs = 0x82,    // Q - process outputs
+    Flags = 0x83,      // M - memory / merkers
+    DataBlock = 0x84,  // DB - data blocks
+    DataBlockInst = 0x85, // DI - instance data blocks
+    LocalData = 0x86,  // L - local data
+    PrevLocalData = 0x87,
+}
+
+impl S7Area {
+    pub fn from_u8(val: u8) -> Option<Self> {
+        match val {
+            0x03 => Some(Self::SystemInfo),
+            0x05 => Some(Self::SystemFlags),
+            0x06 => Some(Self::AnalogInputs),
+            0x07 => Some(Self::AnalogOutputs),
+            0x1C => Some(Self::Counter),
+            0x1D => Some(Self::Timer),
+            0x1E => Some(Self::Counter200),
+            0x1F => Some(Self::Timer200),
+            0x21 => Some(Self::DataRecord),
+            0x81 => Some(Self::Inputs),
+            0x82 => Some(Self::Outputs),
+            0x83 => Some(Self::Flags),
+            0x84 => Some(Self::DataBlock),
+            0x85 => Some(Self::DataBlockInst),
+            0x86 => Some(Self::LocalData),
+            0x87 => Some(Self::PrevLocalData),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::SystemInfo => "S200 System Info",
+            Self::SystemFlags => "S200 System Flags",
+            Self::AnalogInputs => "S200 Analog Inputs",
+            Self::AnalogOutputs => "S200 Analog Outputs",
+            Self::Counter => "Counter",
+            Self::Timer => "Timer",
+            Self::Counter200 => "S200 Counter",
+            Self::Timer200 => "S200 Timer",
+            Self::DataRecord => "Direct Peripheral Access",
+            Self::Inputs => "Inputs (I)",
+            Self::Outputs => "Outputs (Q)",
+            Self::Flags => "Flags (M)",
+            Self::DataBlock => "Data Block (DB)",
+            Self::DataBlockInst => "Instance DB (DI)",
+            Self::LocalData => "Local Data (L)",
+            Self::PrevLocalData => "Prev Local Data",
+        }
+    }
+}
+
+/// S7comm Userdata function groups (lower nibble of function_type)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum S7UserdataGroup {
+    ModeTransition = 0x00,
+    Programmer = 0x01,
+    CyclicData = 0x02,
+    BlockFunctions = 0x03,
+    CpuFunctions = 0x04,
+    Security = 0x05,
+    Pbc = 0x06,       // Programmable Block Communication (BSEND/BRECV)
+    TimeFunctions = 0x07,
+    Ncprg = 0x0F,     // NC programming
+}
+
+impl S7UserdataGroup {
+    pub fn from_u8(val: u8) -> Option<Self> {
+        match val {
+            0x00 => Some(Self::ModeTransition),
+            0x01 => Some(Self::Programmer),
+            0x02 => Some(Self::CyclicData),
+            0x03 => Some(Self::BlockFunctions),
+            0x04 => Some(Self::CpuFunctions),
+            0x05 => Some(Self::Security),
+            0x06 => Some(Self::Pbc),
+            0x07 => Some(Self::TimeFunctions),
+            0x0F => Some(Self::Ncprg),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::ModeTransition => "Mode Transition",
+            Self::Programmer => "Programmer Commands",
+            Self::CyclicData => "Cyclic Data",
+            Self::BlockFunctions => "Block Functions",
+            Self::CpuFunctions => "CPU Functions",
+            Self::Security => "Security",
+            Self::Pbc => "PBC BSEND/BRECV",
+            Self::TimeFunctions => "Time Functions",
+            Self::Ncprg => "NC Programming",
+        }
+    }
+}
+
+/// S7comm Security (group 5) subfunctions
+pub const S7_SECURITY_PLC_PASSWORD: u8 = 0x01; // PLC password protection
+pub const S7_SECURITY_CLEAR_PASSWORD: u8 = 0x02;
+
+/// S7comm CPU functions (group 4) subfunctions
+pub const S7_CPU_READ_SZL: u8 = 0x01; // Read System Status List (recon)
+pub const S7_CPU_MSG_SERVICE: u8 = 0x02;
+
+/// PLC Control service names (parameter of PlcControl function 0x28)
+pub fn plc_control_service(pi_service: &[u8]) -> &'static str {
+    // Match on known program-invocation service strings
+    if pi_service.windows(5).any(|w| w == b"P_PROGRAM") || pi_service == b"P_PROGRAM" {
+        "Program Control"
+    } else if pi_service.starts_with(b"_INSE") {
+        "Insert Block"
+    } else if pi_service.starts_with(b"_DELE") {
+        "Delete Block"
+    } else if pi_service.starts_with(b"_GARB") {
+        "Compress Memory (Garbage Collection)"
+    } else if pi_service.starts_with(b"_MODU") {
+        "Module Control"
+    } else {
+        "Unknown Service"
+    }
+}
 
 /// S7comm function codes
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -97,5 +241,51 @@ impl S7Function {
             Self::SetupComm => "T0886 Remote Services",
             _ => "",
         }
+    }
+}
+
+/// S7comm-plus (v3) opcodes
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum S7PlusOpcode {
+    Request = 0x31,
+    Response = 0x32,
+    Notification = 0x33,
+}
+
+impl S7PlusOpcode {
+    pub fn from_u8(val: u8) -> Option<Self> {
+        match val {
+            0x31 => Some(Self::Request),
+            0x32 => Some(Self::Response),
+            0x33 => Some(Self::Notification),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Request => "Request",
+            Self::Response => "Response",
+            Self::Notification => "Notification",
+        }
+    }
+}
+
+/// S7comm-plus (v3) function codes
+pub fn s7plus_function_name(func: u16) -> &'static str {
+    match func {
+        0x04B1 => "Explore",
+        0x04BB => "CreateObject",
+        0x04D4 => "DeleteObject",
+        0x04F2 => "SetVariable",
+        0x0524 => "GetLink",
+        0x0542 => "SetMultiVariables",
+        0x054C => "GetMultiVariables",
+        0x0556 => "BeginSequence",
+        0x0560 => "EndSequence",
+        0x056B => "Invoke",
+        0x0586 => "GetVarSubStreamed",
+        _ => "Unknown",
     }
 }

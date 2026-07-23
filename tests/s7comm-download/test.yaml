@@ -1,0 +1,41 @@
+requires:
+  min-version: 8.0.0
+  plugins:
+    - s7comm
+
+args:
+  - -k none
+
+pcap: input.pcap
+rules: test.rules
+
+checks:
+  # Setup Communication is detected
+  - filter:
+      min: 1
+      match:
+        event_type: alert
+        alert.signature_id: 3700010
+
+  # Request Download (dangerous program transfer) is detected
+  - filter:
+      min: 1
+      match:
+        event_type: alert
+        alert.signature_id: 3700003
+
+  # The generic "dangerous operation" keyword fires on the download
+  - filter:
+      min: 1
+      match:
+        event_type: alert
+        alert.signature_id: 3700099
+
+  # S7comm event log carries the Request Download with ATT&CK mapping
+  - filter:
+      min: 1
+      match:
+        event_type: s7comm
+        s7comm.function_name: "Request Download"
+        s7comm.is_dangerous: true
+        s7comm.attack_technique: "T0843 Program Download"
