@@ -86,6 +86,7 @@ fn log_s7comm(tx: &S7commTransaction, js: &mut SCJsonBuilderWrapper) -> Result<(
     // Data item (Read/Write Variable addressing)
     if tx.has_data_item {
         js.open_object("item")?;
+        js.set_uint("count", tx.item_count as u64)?;
         js.set_uint("area", tx.item_area as u64)?;
         if let Some(aname) = tx.item_area_name {
             js.set_string("area_name", aname)?;

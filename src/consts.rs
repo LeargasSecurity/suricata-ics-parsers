@@ -289,3 +289,48 @@ pub fn s7plus_function_name(func: u16) -> &'static str {
         _ => "Unknown",
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_function_mapping() {
+        assert_eq!(S7Function::from_u8(0x29), Some(S7Function::PlcStop));
+        assert_eq!(S7Function::from_u8(0x05), Some(S7Function::WriteVar));
+        assert_eq!(S7Function::from_u8(0xAB), None);
+        assert!(S7Function::PlcStop.is_dangerous());
+        assert!(!S7Function::ReadVar.is_dangerous());
+        assert_eq!(S7Function::WriteVar.attack_technique(), "T0836 Modify Parameter");
+    }
+
+    #[test]
+    fn test_area_mapping() {
+        assert_eq!(S7Area::from_u8(0x84), Some(S7Area::DataBlock));
+        assert_eq!(S7Area::from_u8(0x83), Some(S7Area::Flags));
+        assert_eq!(S7Area::from_u8(0x82), Some(S7Area::Outputs));
+        assert_eq!(S7Area::from_u8(0x00), None);
+        assert_eq!(S7Area::DataBlock.as_str(), "Data Block (DB)");
+    }
+
+    #[test]
+    fn test_userdata_group_mapping() {
+        assert_eq!(
+            S7UserdataGroup::from_u8(0x05),
+            Some(S7UserdataGroup::Security)
+        );
+        assert_eq!(
+            S7UserdataGroup::from_u8(0x04),
+            Some(S7UserdataGroup::CpuFunctions)
+        );
+        assert_eq!(S7UserdataGroup::CpuFunctions.as_str(), "CPU Functions");
+    }
+
+    #[test]
+    fn test_s7plus_mapping() {
+        assert_eq!(S7PlusOpcode::from_u8(0x31), Some(S7PlusOpcode::Request));
+        assert_eq!(s7plus_function_name(0x04f2), "SetVariable");
+        assert_eq!(s7plus_function_name(0x04b1), "Explore");
+        assert_eq!(s7plus_function_name(0xffff), "Unknown");
+    }
+}

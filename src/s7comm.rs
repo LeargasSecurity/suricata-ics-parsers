@@ -29,6 +29,10 @@ pub(crate) static mut ALPROTO_S7COMM: AppProto = ALPROTO_UNKNOWN;
 /// Maximum number of live transactions before we force an error (DoS guard).
 static mut S7COMM_MAX_TX: usize = 1024;
 
+/// Maximum bytes we will buffer per direction while waiting for a full PDU.
+/// A single TPKT is capped at 65535 bytes; this bounds pathological buffering.
+static mut S7COMM_MAX_BUFFER: usize = 131072;
+
 #[derive(AppLayerEvent)]
 pub(crate) enum S7commEvent {
     MalformedPdu,
@@ -61,6 +65,7 @@ pub(crate) struct S7commTransaction {
 
     // Data item (Read/Write Variable)
     pub has_data_item: bool,
+    pub item_count: u8,
     pub item_area: u8,
     pub item_area_name: Option<&'static str>,
     pub item_db_number: u16,
@@ -117,6 +122,7 @@ impl S7commTransaction {
             response_error_class: 0,
             response_error_code: 0,
             has_data_item: false,
+            item_count: 0,
             item_area: 0,
             item_area_name: None,
             item_db_number: 0,
@@ -220,6 +226,12 @@ impl S7commState {
 
         self.request_buffer.extend_from_slice(input);
 
+        // Bound pathological buffering (DoS guard).
+        if self.request_buffer.len() > unsafe { S7COMM_MAX_BUFFER } {
+            self.request_buffer.clear();
+            return AppLayerResult::err();
+        }
+
         loop {
             if self.request_buffer.len() < 4 {
                 return AppLayerResult::ok();
@@ -268,6 +280,12 @@ impl S7commState {
         }
 
         self.response_buffer.extend_from_slice(input);
+
+        // Bound pathological buffering (DoS guard).
+        if self.response_buffer.len() > unsafe { S7COMM_MAX_BUFFER } {
+            self.response_buffer.clear();
+            return AppLayerResult::err();
+        }
 
         loop {
             if self.response_buffer.len() < 4 {
@@ -334,6 +352,7 @@ impl S7commState {
                     // Data item (Read/Write Variable)
                     if let Some(ref item) = pdu.data_item {
                         tx.has_data_item = true;
+                        tx.item_count = pdu.item_count;
                         tx.item_area = item.area;
                         tx.item_area_name = S7Area::from_u8(item.area).map(|a| a.as_str());
                         tx.item_db_number = item.db_number;
@@ -410,7 +429,17 @@ impl S7commState {
                     }
                     tx.complete = true;
                 }
-                _ => {}
+                _ => {
+                    // Unknown/invalid ROSCTR value — record as an anomaly.
+                    if pdu.invalid_rosctr {
+                        let tx = self.new_tx();
+                        tx.pdu_reference = header.pdu_reference;
+                        tx.request_rosctr = header.rosctr;
+                        tx.request_buffer = raw.to_vec();
+                        tx.tx_data.set_event(S7commEvent::InvalidProtocolId as u8);
+                        tx.complete = true;
+                    }
+                }
             }
         }
     }
@@ -591,6 +620,14 @@ pub(crate) unsafe extern "C" fn s7comm_register_parser() {
                 S7COMM_MAX_TX = v;
             } else {
                 SCLogError!("Invalid value for s7comm.max-tx");
+            }
+        }
+        // Optional config: app-layer.protocols.s7comm.max-request-size
+        if let Some(val) = conf_get("app-layer.protocols.s7comm.max-request-size") {
+            if let Ok(v) = val.parse::<usize>() {
+                S7COMM_MAX_BUFFER = v;
+            } else {
+                SCLogError!("Invalid value for s7comm.max-request-size");
             }
         }
         SCAppLayerParserRegisterLogger(IPPROTO_TCP, ALPROTO_S7COMM);
