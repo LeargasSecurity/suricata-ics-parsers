@@ -1,5 +1,10 @@
-// Suricata S7comm ICS Protocol Parser
-// Copyright (C) 2026 Critical Path Security
+// Suricata S7comm ICS Protocol Parser Plugin
+// Copyright (C) 2026 Leargas Security
 // License: GPL-2.0
 
-pub mod s7comm;
+mod consts;
+mod detect;
+mod log;
+mod parser;
+pub mod plugin;
+mod s7comm;

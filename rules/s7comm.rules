@@ -1,5 +1,5 @@
 # S7comm Suricata Detection Rules
-# Copyright (C) 2026 Critical Path Security
+# Copyright (C) 2026 Leargas Security
 # License: GPL-2.0
 #
 # These rules require the suricata-s7comm app-layer parser plugin.
