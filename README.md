@@ -332,6 +332,46 @@ Run them from a Suricata source directory:
 ../suricata-verify/run.py --suricata=/usr/local/bin/suricata s7comm-write-var
 ```
 
+### Batch runner over a pcap directory
+
+[`scripts/run-s7comm-pcaps.sh`](scripts/run-s7comm-pcaps.sh) runs Suricata with
+the S7comm plugin over every pcap in a directory and prints a per-pcap summary
+of packets, S7comm EVE logs, and S7comm alerts. It auto-detects the plugin
+(freshly built or installed), generates a self-contained config (with
+`stream.midstream` enabled so mid-stream sample captures parse), and writes
+per-pcap `eve.json`/`run.log` under a results directory.
+
+```bash
+# Single pass over /mnt/pcap (default), results in ~/s7comm-results
+scripts/run-s7comm-pcaps.sh
+
+# Custom pcap and results directories
+scripts/run-s7comm-pcaps.sh /path/to/pcaps /path/to/results
+```
+
+**Loop / watcher mode** — set `INTERVAL` (seconds) to scan continuously:
+
+```bash
+# Watch /mnt/pcap every 30s; only new/changed pcaps are processed
+INTERVAL=30 scripts/run-s7comm-pcaps.sh
+
+# Replay mode: reprocess every pcap on each pass (e.g. to feed a forwarder)
+INTERVAL=30 REPROCESS=1 scripts/run-s7comm-pcaps.sh
+```
+
+Environment variables:
+
+| Var | Default | Meaning |
+| --- | --- | --- |
+| `INTERVAL` | `0` | Seconds between passes; `0` = run once, `>0` = loop |
+| `REPROCESS` | `0` | `1` = reprocess every pcap each pass; `0` = skip already-processed (by size/mtime) |
+| `SURICATA` | `suricata` | Path to the Suricata binary |
+| `PLUGIN` | auto | Path to `libsuricata_s7comm.so` |
+
+In watcher mode a `.processed` state file records handled pcaps (keyed on
+name + size + mtime) so only new or modified captures are re-run. `Ctrl-C`
+stops the loop cleanly.
+
 ---
 
 ## Repository Layout
@@ -349,6 +389,8 @@ src/
   log.rs              EVE JSON logger
 rules/s7comm.rules    Bundled detection signatures
 doc/s7comm-keywords.rst  Keyword/frame/event reference
+scripts/
+  run-s7comm-pcaps.sh  Batch/loop runner over a pcap directory
 tests/                suricata-verify tests with pcaps
 ```
 
