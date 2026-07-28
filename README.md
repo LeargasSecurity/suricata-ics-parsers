@@ -15,8 +15,7 @@ framework.
 
 Maintained by **Leargas Security**.
 
-> **Note:** This is an **out-of-tree** plugin distributed ahead of Suricata
-> mainline inclusion. It is **not affiliated with or endorsed by OISF**.
+> **Note:** This is an **out-of-tree** plugin. It is **not affiliated with or endorsed by OISF**.
 
 ---
 
