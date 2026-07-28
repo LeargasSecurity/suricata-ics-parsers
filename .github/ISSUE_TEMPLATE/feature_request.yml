@@ -1,0 +1,23 @@
+name: Feature request
+description: Suggest new protocol coverage, keywords, rules, or tooling
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / use case
+      description: What ICS visibility or detection gap are you trying to close?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: New keyword, EVE field, rule, protocol function coverage, etc.
+    validations:
+      required: true
+  - type: textarea
+    id: references
+    attributes:
+      label: References
+      description: Protocol docs, PCAPs, ATT&CK-ICS techniques, threat reporting.

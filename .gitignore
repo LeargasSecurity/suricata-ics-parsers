@@ -2,3 +2,6 @@ target/
 *.so
 *.dylib
 
+# Generated from Cargo.toml.in by `make configure`
+/Cargo.toml
+

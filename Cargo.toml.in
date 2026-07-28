@@ -13,8 +13,10 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 nom7 = { version = "7.0", package = "nom" }
 libc = "~0.2.82"
-suricata = { path = "/home/leargas/suricata-8.0.6/rust/" }
-suricata-sys = { path = "/home/leargas/suricata-8.0.6/rust/sys" }
+# These paths are filled in from $SURICATA_SRC by `make configure`.
+# Do not edit the generated Cargo.toml directly; edit Cargo.toml.in instead.
+suricata = { path = "@SURICATA_RUST@" }
+suricata-sys = { path = "@SURICATA_RUST@/sys" }
 
 [features]
 default = ["suricata8"]

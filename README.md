@@ -1,5 +1,8 @@
 # Suricata S7comm ICS Protocol Parser
 
+[![CI](https://github.com/LeargasSecurity/suricata-ics-parsers/actions/workflows/ci.yml/badge.svg)](https://github.com/LeargasSecurity/suricata-ics-parsers/actions/workflows/ci.yml)
+[![License: GPL v2](https://img.shields.io/badge/License-GPLv2-blue.svg)](LICENSE)
+
 A [Suricata 8.0](https://suricata.io/) application-layer parser **plugin** for the
 Siemens **S7comm** and **S7comm-plus** protocols, purpose-built for
 Industrial Control System (ICS/OT) network monitoring.
@@ -12,6 +15,9 @@ observed operations to the [MITRE ATT&CK for ICS](https://attack.mitre.org/matri
 framework.
 
 Maintained by **Leargas Security**.
+
+> **Note:** This is an **out-of-tree** plugin distributed ahead of Suricata
+> mainline inclusion. It is **not affiliated with or endorsed by OISF**.
 
 ---
 
@@ -48,37 +54,60 @@ Maintained by **Leargas Security**.
 
 ## Building
 
-The plugin links against the Suricata Rust crates from the Suricata source
-tree. Adjust the paths in `Cargo.toml` if your Suricata source lives elsewhere:
-
-```toml
-[dependencies]
-suricata     = { path = "/path/to/suricata-8.0.6/rust/" }
-suricata-sys = { path = "/path/to/suricata-8.0.6/rust/sys" }
-```
-
-Then build:
+The plugin links against the Suricata Rust crates from the matching **Suricata
+8.0.x source tree**. Point `SURICATA_SRC` at that tree (the directory that
+contains `rust/`) and build with `make` — `Cargo.toml` is generated from
+`Cargo.toml.in`, so nothing needs to be hand-edited:
 
 ```bash
-cargo build --release
+# Default SURICATA_SRC is $HOME/suricata-8.0.6; override as needed:
+make build SURICATA_SRC=/opt/suricata-8.0.6
 ```
 
 The plugin is produced at `target/release/libsuricata_s7comm.so`.
 
+Useful targets:
+
+```bash
+make test     SURICATA_SRC=/opt/suricata-8.0.6   # Rust unit tests
+make install  SURICATA_SRC=/opt/suricata-8.0.6   # install .so + rules (sudo)
+make clean
+```
+
+> Prefer containers? See [Docker](#docker) below — no local Suricata build
+> required.
+>
 > The `.cargo/config.toml` sets the linker flag
 > `-C link-args=-Wl,-undefined,dynamic_lookup` so the plugin can resolve
 > Suricata's symbols at load time.
 
 ---
 
+## Docker
+
+Build a self-contained image with Suricata + the plugin preinstalled:
+
+```bash
+docker build -t suricata-s7comm .
+
+# Offline: analyze a pcap
+docker run --rm -v "$PWD:/data" suricata-s7comm -r /data/capture.pcap -l /data/out -k none
+
+# Live: monitor a host interface
+docker run --rm --net=host suricata-s7comm -i eth0 -k none
+```
+
+---
+
 ## Installation
 
 ```bash
-# 1. Install the plugin shared object
+# Install the plugin shared object and rules (from a build tree):
+sudo make install SURICATA_SRC=/opt/suricata-8.0.6
+
+# ...or manually:
 sudo mkdir -p /usr/local/lib/suricata/plugins
 sudo cp target/release/libsuricata_s7comm.so /usr/local/lib/suricata/plugins/
-
-# 2. Install the detection rules
 sudo cp rules/s7comm.rules /usr/local/var/lib/suricata/rules/
 ```
 

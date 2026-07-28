@@ -1,0 +1,52 @@
+name: Bug report
+description: Report a parsing error, crash, false positive/negative, or build problem
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. For **security vulnerabilities**, do not use this
+        form — follow [SECURITY.md](../blob/main/SECURITY.md) instead.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you observe vs. what did you expect?
+      placeholder: e.g. A Write Variable to DB100 did not raise sid:3700107.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Command line, config snippet, and a minimal PCAP if possible.
+      placeholder: |
+        1. make build SURICATA_SRC=/opt/suricata-8.0.6
+        2. suricata -c suricata.yaml -r sample.pcap -l out -k none
+        3. grep s7comm out/eve.json
+    validations:
+      required: true
+  - type: input
+    id: suricata-version
+    attributes:
+      label: Suricata version
+      placeholder: "8.0.6"
+    validations:
+      required: true
+  - type: input
+    id: plugin-version
+    attributes:
+      label: Plugin version / commit
+      placeholder: "v0.1.0 or git SHA"
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS / platform
+      placeholder: "Ubuntu 24.04 x86_64"
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs / EVE output
+      render: shell
