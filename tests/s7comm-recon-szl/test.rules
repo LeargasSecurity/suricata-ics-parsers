@@ -1,0 +1,3 @@
+alert s7comm any any -> any 102 (msg:"S7COMM Read SZL (System Enumeration)"; \
+    s7comm.rosctr:7; s7comm.userdata_group:4; s7comm.subfunction:1; \
+    classtype:attempted-recon; sid:3700103; rev:1;)

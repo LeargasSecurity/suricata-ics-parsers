@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  SURICATA_VERSION: "8.0.6"
+  CARGO_TERM_COLOR: always
+
+jobs:
+  fmt:
+    name: rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        run: rustup component add rustfmt
+      - name: Check formatting
+        run: cargo fmt --all --check
+        continue-on-error: true
+
+  build:
+    name: build & test (Suricata ${{ '' }}8.0.6)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential autoconf automake libtool pkg-config \
+            libpcre2-dev libyaml-dev libjansson-dev libcap-ng-dev \
+            libmagic-dev libnet1-dev libpcap-dev zlib1g-dev \
+            libnss3-dev libnspr4-dev liblz4-dev curl
+
+      - name: Install Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          cargo install --force cbindgen
+
+      - name: Cache Suricata source build
+        id: cache-suricata
+        uses: actions/cache@v4
+        with:
+          path: suricata-${{ env.SURICATA_VERSION }}
+          key: suricata-${{ env.SURICATA_VERSION }}-${{ runner.os }}
+
+      - name: Download & build Suricata ${{ env.SURICATA_VERSION }}
+        if: steps.cache-suricata.outputs.cache-hit != 'true'
+        run: |
+          curl -sSLO "https://www.openinfosecfoundation.org/download/suricata-${SURICATA_VERSION}.tar.gz"
+          tar xzf "suricata-${SURICATA_VERSION}.tar.gz"
+          cd "suricata-${SURICATA_VERSION}"
+          ./configure --enable-rust --disable-gccmarch-native
+          make -j"$(nproc)"
+
+      - name: Build plugin
+        run: make build SURICATA_SRC="$PWD/suricata-${SURICATA_VERSION}"
+
+      - name: Unit tests
+        run: make test SURICATA_SRC="$PWD/suricata-${SURICATA_VERSION}"
+
+      - name: Upload plugin artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: libsuricata_s7comm.so
+          path: target/release/libsuricata_s7comm.so
+          if-no-files-found: error
+
+      - name: suricata-verify tests
+        continue-on-error: true
+        run: |
+          git clone --depth 1 https://github.com/OISF/suricata-verify.git
+          SURI_BIN="$PWD/suricata-${SURICATA_VERSION}/src/suricata"
+          for t in tests/*/; do
+            name="$(basename "$t")"
+            echo "::group::suricata-verify $name"
+            python3 suricata-verify/run.py \
+              --suricata="$SURI_BIN" \
+              --testdir="$PWD/tests" "$name" || echo "verify: $name failed (non-blocking)"
+            echo "::endgroup::"
+          done

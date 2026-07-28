@@ -1,0 +1,11 @@
+target/
+*.so
+*.dylib
+
+# Generated from Cargo.toml.in by `make configure`
+/Cargo.toml
+
+# This is a library/plugin crate: dependency resolution is governed by the
+# Suricata source tree it is built against, so Cargo.lock is not committed.
+/Cargo.lock
+

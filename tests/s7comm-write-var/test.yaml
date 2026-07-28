@@ -1,0 +1,58 @@
+requires:
+  min-version: 8.0.0
+  plugins:
+    - s7comm
+
+args:
+  - -k none
+
+pcap: input.pcap
+rules: test.rules
+
+checks:
+  # S7comm app-layer events are logged with parsed data items
+  - filter:
+      count: 1
+      match:
+        event_type: s7comm
+        s7comm.function_name: "Write Variable"
+        s7comm.item.area_name: "Flags (M)"
+        s7comm.is_dangerous: true
+
+  # Read Variable from DB1 with parsed item addressing
+  - filter:
+      count: 1
+      match:
+        event_type: s7comm
+        s7comm.function_name: "Read Variable"
+        s7comm.item.db_number: 1
+        s7comm.item.area_name: "Data Block (DB)"
+
+  # COTP TSAP rack/slot addressing is extracted
+  - filter:
+      min: 1
+      match:
+        event_type: s7comm
+        s7comm.cotp.rack: 0
+        s7comm.cotp.slot: 2
+
+  # Write Variable rule fires
+  - filter:
+      min: 1
+      match:
+        event_type: alert
+        alert.signature_id: 3700009
+
+  # Area-aware write detection fires
+  - filter:
+      min: 1
+      match:
+        event_type: alert
+        alert.signature_id: 3700106
+
+  # DB-aware read detection fires
+  - filter:
+      min: 1
+      match:
+        event_type: alert
+        alert.signature_id: 3700200

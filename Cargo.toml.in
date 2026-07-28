@@ -1,0 +1,23 @@
+[package]
+name = "suricata-s7comm"
+version = "0.1.0"
+edition = "2021"
+authors = ["Leargas Security"]
+description = "Suricata S7comm/S7comm-plus ICS protocol parser plugin"
+license = "GPL-2.0"
+
+[lib]
+name = "suricata_s7comm"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+nom7 = { version = "7.0", package = "nom" }
+libc = "~0.2.82"
+# These paths are filled in from $SURICATA_SRC by `make configure`.
+# Do not edit the generated Cargo.toml directly; edit Cargo.toml.in instead.
+suricata = { path = "@SURICATA_RUST@" }
+suricata-sys = { path = "@SURICATA_RUST@/sys" }
+
+[features]
+default = ["suricata8"]
+suricata8 = []

@@ -1,0 +1,9 @@
+target/
+*.so
+*.dylib
+.git
+.github
+Cargo.toml
+*.md
+!README.md
+tests/*/README.md
