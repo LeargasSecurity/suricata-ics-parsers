@@ -197,3 +197,8 @@ The parser sets the following app-layer events (match with ``app-layer-event``):
 - ``password_access``
 - ``s7_comm_plus_usage``
 - ``too_many_transactions``
+
+Detection rules for the anomaly / DoS events ship in ``rules/s7comm.rules``
+(SIDs ``3700300``–``3700302``): malformed or oversized PDU, transaction flood
+(max-tx guard tripped), and invalid protocol identifier — all mapped to
+MITRE ATT&CK for ICS **T0814 (Denial of Service)** where applicable.

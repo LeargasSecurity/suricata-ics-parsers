@@ -7,6 +7,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Suricata rules for the parser's anomaly/DoS app-layer events: malformed/
+  oversized PDU, transaction flood (max-tx), and invalid protocol id
+  (`rules/s7comm.rules`, SIDs 3700300-3700302; ATT&CK ICS T0814).
 - `make`-based build with a `SURICATA_SRC`-driven `Cargo.toml` generated from
   `Cargo.toml.in`, so the plugin builds regardless of where the Suricata source
   tree lives (removes the previously hardcoded path).

@@ -185,3 +185,35 @@ alert s7comm any any -> any 102 (msg:"S7COMM-Plus CreateObject"; \
     metadata:attack_target ICS, mitre_attack_technique T0843; \
     sid:3700110; rev:1;)
 
+
+# ============================================================================
+# Protocol anomalies & DoS (parser app-layer events)
+# ATT&CK ICS: T0814 Denial of Service
+# ----------------------------------------------------------------------------
+# Structural/behavioral detections for oversized/malformed S7comm traffic where
+# no exact exploit bytes are published. These consume the parser's own
+# app-layer events rather than fixed byte offsets.
+
+# Oversized / truncated / otherwise malformed S7comm PDU. Also trips when a PDU
+# exceeds the parser's max-buffer guard (S7COMM_MAX_BUFFER, default 131072).
+alert s7comm any any -> any 102 (msg:"S7COMM ANOMALY Malformed or oversized S7comm PDU"; \
+    app-layer-event:s7comm.malformed_pdu; \
+    classtype:protocol-command-decode; \
+    metadata:attack_target ICS, mitre_attack_technique T0814; \
+    sid:3700300; rev:1;)
+
+# Transaction flood: the parser's live-transaction guard (max-tx, default 1024)
+# tripped — more concurrent S7comm transactions than the configured cap.
+alert s7comm any any -> any 102 (msg:"S7COMM DoS Transaction flood (max-tx guard tripped)"; \
+    app-layer-event:s7comm.too_many_transactions; \
+    classtype:attempted-dos; \
+    metadata:attack_target ICS, mitre_attack_technique T0814; \
+    sid:3700301; rev:1;)
+
+# Invalid S7comm protocol identifier (0x32 expected) on port 102 — protocol
+# confusion, tunnelling, or a malformed/oversized frame that desynced parsing.
+alert s7comm any any -> any 102 (msg:"S7COMM ANOMALY Invalid protocol identifier"; \
+    app-layer-event:s7comm.invalid_protocol_id; \
+    classtype:protocol-command-decode; \
+    metadata:attack_target ICS; \
+    sid:3700302; rev:1;)
