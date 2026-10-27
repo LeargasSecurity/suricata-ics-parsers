@@ -406,11 +406,24 @@ rules, and output assertions:
 | `s7comm-download` | Program-download detection, `s7comm.dangerous`, ATT&CK |
 | `s7comm-recon-szl` | Read SZL reconnaissance via userdata keywords |
 | `s7comm-auth-password` | Security/password access + `frame` keyword |
+| `iec104-commands` | IEC-104 STARTDT/GI/control commands vs. shipped `iec104.rules`, `iec104.dangerous`, EVE decoding |
+| `iec104-sq` | IEC-104 SQ=1 ASDUs, multiple APDUs per segment, no false positives |
 
 Run them from a Suricata source directory:
 
 ```bash
 ../suricata-verify/run.py --suricata=/usr/local/bin/suricata s7comm-write-var
+```
+
+The `iec104-*` tests load the plugin from `SURICATA_ICS_PLUGIN` (they are
+skipped if it is unset) and need `--no-validation`, because the plugin's EVE
+types are not in Suricata's schema:
+
+```bash
+cd /path/to/suricata-8.0.x   # run.py uses ./src/suricata
+SURICATA_ICS_PLUGIN=/path/to/suricata-ics-parsers/target/release/libsuricata_s7comm.so \
+  ../suricata-verify/run.py --no-validation \
+  --testdir=/path/to/suricata-ics-parsers/tests iec104
 ```
 
 ### Batch runner over a pcap directory
@@ -490,8 +503,7 @@ tests/                suricata-verify tests with pcaps
 - The example rule `3700107` (Write to DB100) is illustrative — tune the
   data-block number to your environment.
 - IEC 60870-5-104 assumes the standard 104 profile (2-byte COT, 2-byte common
-  address, 3-byte IOA). IEC 62351-3 (TLS-wrapped 104) is not decoded. The
-  IEC-104 parser is unit-tested but has no suricata-verify pcap test yet.
+  address, 3-byte IOA). IEC 62351-3 (TLS-wrapped 104) is not decoded.
 
 ---
 

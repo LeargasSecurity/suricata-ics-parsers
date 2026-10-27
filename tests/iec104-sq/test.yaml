@@ -1,0 +1,57 @@
+requires:
+  min-version: 8.0.0
+  # Absolute path to libsuricata_s7comm.so (it also provides the iec104 parser).
+  # The test is skipped when this is not set.
+  env:
+    - SURICATA_ICS_PLUGIN
+
+# input.pcap is pcapng format; libpcap reads it transparently.
+command: |
+  ${SRCDIR}/src/suricata --init-errors-fatal -k none \
+      --set plugins.0="${SURICATA_ICS_PLUGIN}" \
+      --set classification-file="${SRCDIR}/etc/classification.config" \
+      --set reference-config-file="${SRCDIR}/etc/reference.config" \
+      -c "${TEST_DIR}/suricata.yaml" -l "${OUTPUT_DIR}" \
+      -r "${TEST_DIR}/input.pcap" -S "${TEST_DIR}/../../rules/iec104.rules"
+
+checks:
+  # Four I-frames in one TCP segment are each parsed as a transaction
+  - filter:
+      count: 4
+      match:
+        event_type: iec104
+        iec104.apci.format: I
+        iec104.asdu.type_name: M_SP_NA_1
+        iec104.asdu.sq: true
+        iec104.asdu.num_objects: 16
+        iec104.asdu.cot_name: interrogated_station
+        iec104.asdu.common_address: 1054
+
+  # SQ=1 base IOA advances by the object count of each ASDU (0, 16, 32, 48)
+  - filter:
+      count: 1
+      match:
+        event_type: iec104
+        iec104.apci.send_seq: 1
+        iec104.asdu.ioa: 0
+  - filter:
+      count: 1
+      match:
+        event_type: iec104
+        iec104.apci.send_seq: 4
+        iec104.asdu.ioa: 48
+
+  # Monitor-direction data raises no alerts and is never flagged dangerous
+  - filter:
+      count: 0
+      match:
+        event_type: alert
+  - filter:
+      count: 0
+      match:
+        event_type: iec104
+        iec104.is_dangerous: true
+  - filter:
+      count: 0
+      match:
+        event_type: anomaly

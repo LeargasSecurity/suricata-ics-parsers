@@ -76,12 +76,16 @@ jobs:
         continue-on-error: true
         run: |
           git clone --depth 1 https://github.com/OISF/suricata-verify.git
-          SURI_BIN="$PWD/suricata-${SURICATA_VERSION}/src/suricata"
-          for t in tests/*/; do
+          # run.py uses ./src/suricata from the current directory. Plugin EVE
+          # types are not in Suricata's schema, so skip schema validation.
+          export SURICATA_ICS_PLUGIN="$PWD/target/release/libsuricata_s7comm.so"
+          VERIFY="$PWD/suricata-verify/run.py"
+          TESTS="$PWD/tests"
+          cd "suricata-${SURICATA_VERSION}"
+          for t in "$TESTS"/*/; do
             name="$(basename "$t")"
             echo "::group::suricata-verify $name"
-            python3 suricata-verify/run.py \
-              --suricata="$SURI_BIN" \
-              --testdir="$PWD/tests" "$name" || echo "verify: $name failed (non-blocking)"
+            python3 "$VERIFY" --no-validation \
+              --testdir="$TESTS" "$name" || echo "verify: $name failed (non-blocking)"
             echo "::endgroup::"
           done

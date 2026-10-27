@@ -13,6 +13,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   keywords plus the `iec104.data` sticky buffer, `iec104.pdu`/`iec104.asdu`
   frames, EVE `iec104` logging with ATT&CK-ICS mapping, anomaly events, and
   `rules/iec104.rules` (SIDs 3701001-3701308).
+- suricata-verify pcap tests for IEC-104: `iec104-commands` (control commands
+  against the shipped `iec104.rules`) and `iec104-sq` (SQ=1 ASDUs). They load
+  the plugin from `SURICATA_ICS_PLUGIN` and run with `--no-validation`.
 - Suricata rules for the parser's anomaly/DoS app-layer events: malformed/
   oversized PDU, transaction flood (max-tx), and invalid protocol id
   (`rules/s7comm.rules`, SIDs 3700300-3700302; ATT&CK ICS T0814).

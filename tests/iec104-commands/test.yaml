@@ -1,0 +1,137 @@
+requires:
+  min-version: 8.0.0
+  # Absolute path to libsuricata_s7comm.so (it also provides the iec104 parser).
+  # The test is skipped when this is not set.
+  env:
+    - SURICATA_ICS_PLUGIN
+
+# Run with the shipped rules/iec104.rules so the test guards the real ruleset.
+command: |
+  ${SRCDIR}/src/suricata --init-errors-fatal -k none \
+      --set plugins.0="${SURICATA_ICS_PLUGIN}" \
+      --set classification-file="${SRCDIR}/etc/classification.config" \
+      --set reference-config-file="${SRCDIR}/etc/reference.config" \
+      -c "${TEST_DIR}/suricata.yaml" -l "${OUTPUT_DIR}" \
+      -r "${TEST_DIR}/input.pcap" -S "${TEST_DIR}/../../rules/iec104.rules"
+
+checks:
+  # Exactly the expected alerts and nothing else (no anomaly/DoS false positives)
+  - filter:
+      count: 31
+      match:
+        event_type: alert
+
+  # STARTDT activation opens the data session
+  - filter:
+      count: 1
+      match:
+        event_type: alert
+        alert.signature_id: 3701040
+
+  # General Interrogation (C_IC_NA_1)
+  - filter:
+      count: 2
+      match:
+        event_type: alert
+        alert.signature_id: 3701030
+
+  # Single / double / regulating-step / bitstring commands
+  - filter:
+      count: 2
+      match:
+        event_type: alert
+        alert.signature_id: 3701001
+  - filter:
+      count: 2
+      match:
+        event_type: alert
+        alert.signature_id: 3701002
+  - filter:
+      count: 2
+      match:
+        event_type: alert
+        alert.signature_id: 3701003
+  - filter:
+      count: 2
+      match:
+        event_type: alert
+        alert.signature_id: 3701004
+
+  # Setpoint commands C_SE_NA_1 / C_SE_NB_1 / C_SE_NC_1
+  - filter:
+      count: 6
+      match:
+        event_type: alert
+        alert.signature_id: 3701010
+
+  # iec104.dangerous fires on every control-direction command
+  - filter:
+      count: 14
+      match:
+        event_type: alert
+        alert.signature_id: 3701099
+
+  # No commands are sent from the outstation port
+  - filter:
+      count: 0
+      match:
+        event_type: alert
+        alert.signature_id: 3701060
+
+  # Every APDU in the flow is logged as an iec104 transaction
+  - filter:
+      count: 115
+      match:
+        event_type: iec104
+
+  # U-format STARTDT act is decoded
+  - filter:
+      count: 1
+      match:
+        event_type: iec104
+        iec104.apci.format: U
+        iec104.apci.u_function_name: STARTDT_ACT
+
+  # Single command is decoded with IOA, state and ATT&CK mapping
+  - filter:
+      count: 1
+      match:
+        event_type: iec104
+        iec104.direction: to_server
+        iec104.asdu.type_name: C_SC_NA_1
+        iec104.asdu.cot_name: activation
+        iec104.asdu.common_address: 10
+        iec104.asdu.ioa: 2
+        iec104.asdu.command.state: 1
+        iec104.is_dangerous: true
+        iec104.attack_technique: "T0855 Unauthorized Command Message / T0831 Manipulation of Control"
+
+  # Floating-point setpoint commands are decoded (values 3.14 and 9.87)
+  - filter:
+      count: 2
+      match:
+        event_type: iec104
+        iec104.asdu.type_name: C_SE_NC_1
+        iec104.asdu.cot_name: activation
+        iec104.is_dangerous: true
+
+  # Monitor-direction measurements are not flagged dangerous
+  - filter:
+      count: 3
+      match:
+        event_type: iec104
+        iec104.direction: to_client
+        iec104.asdu.type_name: M_ME_NC_1
+        iec104.is_dangerous: false
+
+  # Parser emits no anomaly-class events (only command/interrogation notices)
+  - filter:
+      count: 0
+      match:
+        event_type: anomaly
+        anomaly.event: malformed_apdu
+  - filter:
+      count: 0
+      match:
+        event_type: anomaly
+        anomaly.event: sequence_mismatch

@@ -1,0 +1,26 @@
+%YAML 1.1
+---
+# Self-contained config: the plugin is loaded on the command line via
+# --set plugins.0=$SURICATA_ICS_PLUGIN (see test.yaml).
+
+# Public sample captures may start mid-stream (no TCP handshake).
+stream:
+  midstream: true
+
+app-layer:
+  protocols:
+    iec104:
+      enabled: yes
+      detection-ports:
+        dp: 2404
+
+outputs:
+  - eve-log:
+      enabled: yes
+      filetype: regular
+      filename: eve.json
+      types:
+        - alert
+        - anomaly
+        - iec104
+        - flow
