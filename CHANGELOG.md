@@ -29,6 +29,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Community health files: `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`,
   issue templates, and a pull-request template.
 
+### Fixed
+- suricata-verify tests now actually run: `s7comm-*` tests no longer use the
+  unsupported `requires: plugins` and `min:` keys, load the plugin from
+  `SURICATA_ICS_PLUGIN`, and enable EVE output in their configs. The
+  `s7comm-write-var` Write Variable check now expects the four writes present
+  in the capture. The CI verify step and README instructions no longer pass the
+  non-existent `run.py --suricata` option.
+
 ## [0.1.0] - 2026-07-24
 
 ### Added

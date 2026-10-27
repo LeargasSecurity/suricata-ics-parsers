@@ -1,23 +1,34 @@
 requires:
   min-version: 8.0.0
-  plugins:
-    - s7comm
+  # Absolute path to libsuricata_s7comm.so. The test is skipped when unset.
+  env:
+    - SURICATA_ICS_PLUGIN
 
-args:
-  - -k none
-
-pcap: input.pcap
-rules: test.rules
+command: |
+  ${SRCDIR}/src/suricata --init-errors-fatal -k none \
+      --set plugins.0="${SURICATA_ICS_PLUGIN}" \
+      --set classification-file="${SRCDIR}/etc/classification.config" \
+      --set reference-config-file="${SRCDIR}/etc/reference.config" \
+      -c "${TEST_DIR}/suricata.yaml" -l "${OUTPUT_DIR}" \
+      -r "${TEST_DIR}/input.pcap" -S "${TEST_DIR}/test.rules"
 
 checks:
   # S7comm app-layer events are logged with parsed data items
+  # (four Write Var requests to MD0, MD4, MD8 and MD12)
   - filter:
-      count: 1
+      count: 4
       match:
         event_type: s7comm
         s7comm.function_name: "Write Variable"
         s7comm.item.area_name: "Flags (M)"
         s7comm.is_dangerous: true
+  - filter:
+      count: 1
+      match:
+        event_type: s7comm
+        s7comm.function_name: "Write Variable"
+        s7comm.item.address: 12
+        s7comm.item.length: 4
 
   # Read Variable from DB1 with parsed item addressing
   - filter:
@@ -30,7 +41,7 @@ checks:
 
   # COTP TSAP rack/slot addressing is extracted
   - filter:
-      min: 1
+      count: 8
       match:
         event_type: s7comm
         s7comm.cotp.rack: 0
@@ -38,21 +49,21 @@ checks:
 
   # Write Variable rule fires
   - filter:
-      min: 1
+      count: 4
       match:
         event_type: alert
         alert.signature_id: 3700009
 
   # Area-aware write detection fires
   - filter:
-      min: 1
+      count: 4
       match:
         event_type: alert
         alert.signature_id: 3700106
 
   # DB-aware read detection fires
   - filter:
-      min: 1
+      count: 1
       match:
         event_type: alert
         alert.signature_id: 3700200

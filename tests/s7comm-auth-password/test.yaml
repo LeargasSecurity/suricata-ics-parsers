@@ -1,13 +1,16 @@
 requires:
   min-version: 8.0.0
-  plugins:
-    - s7comm
+  # Absolute path to libsuricata_s7comm.so. The test is skipped when unset.
+  env:
+    - SURICATA_ICS_PLUGIN
 
-args:
-  - -k none
-
-pcap: input.pcap
-rules: test.rules
+command: |
+  ${SRCDIR}/src/suricata --init-errors-fatal -k none \
+      --set plugins.0="${SURICATA_ICS_PLUGIN}" \
+      --set classification-file="${SRCDIR}/etc/classification.config" \
+      --set reference-config-file="${SRCDIR}/etc/reference.config" \
+      -c "${TEST_DIR}/suricata.yaml" -l "${OUTPUT_DIR}" \
+      -r "${TEST_DIR}/input.pcap" -S "${TEST_DIR}/test.rules"
 
 checks:
   # Security userdata group (password protection) is detected and flagged
@@ -22,28 +25,28 @@ checks:
 
   # Read SZL reconnaissance is detected
   - filter:
-      min: 1
+      count: 2
       match:
         event_type: s7comm
         s7comm.userdata_group_name: "CPU Functions"
 
   # Security access rule fires
   - filter:
-      min: 1
+      count: 1
       match:
         event_type: alert
         alert.signature_id: 3700102
 
   # SZL recon rule fires
   - filter:
-      min: 1
+      count: 2
       match:
         event_type: alert
         alert.signature_id: 3700103
 
   # Frame-based rule fires (validates frame registration)
   - filter:
-      min: 1
+      count: 3
       match:
         event_type: alert
         alert.signature_id: 3700300

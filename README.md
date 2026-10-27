@@ -409,21 +409,16 @@ rules, and output assertions:
 | `iec104-commands` | IEC-104 STARTDT/GI/control commands vs. shipped `iec104.rules`, `iec104.dangerous`, EVE decoding |
 | `iec104-sq` | IEC-104 SQ=1 ASDUs, multiple APDUs per segment, no false positives |
 
-Run them from a Suricata source directory:
+Run them from a built Suricata source directory (`run.py` uses
+`./src/suricata`). The tests load the plugin from `SURICATA_ICS_PLUGIN` (they
+are skipped if it is unset) and need `--no-validation`, because the plugin's
+EVE types are not in Suricata's schema:
 
 ```bash
-../suricata-verify/run.py --suricata=/usr/local/bin/suricata s7comm-write-var
-```
-
-The `iec104-*` tests load the plugin from `SURICATA_ICS_PLUGIN` (they are
-skipped if it is unset) and need `--no-validation`, because the plugin's EVE
-types are not in Suricata's schema:
-
-```bash
-cd /path/to/suricata-8.0.x   # run.py uses ./src/suricata
+cd /path/to/suricata-8.0.x
 SURICATA_ICS_PLUGIN=/path/to/suricata-ics-parsers/target/release/libsuricata_s7comm.so \
   ../suricata-verify/run.py --no-validation \
-  --testdir=/path/to/suricata-ics-parsers/tests iec104
+  --testdir=/path/to/suricata-ics-parsers/tests          # or a name/prefix, e.g. iec104
 ```
 
 ### Batch runner over a pcap directory
