@@ -4,6 +4,7 @@
 
 mod consts;
 mod detect;
+mod iec104;
 mod log;
 mod parser;
 pub mod plugin;

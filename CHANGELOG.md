@@ -7,6 +7,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- IEC 60870-5-104 app-layer parser (`iec104`, TCP/2404) in the same plugin:
+  APCI I/S/U framing, ASDU header, IOA extraction, command/setpoint decoding
+  (select/execute, state, value), N(S) continuity tracking, 7 detection
+  keywords plus the `iec104.data` sticky buffer, `iec104.pdu`/`iec104.asdu`
+  frames, EVE `iec104` logging with ATT&CK-ICS mapping, anomaly events, and
+  `rules/iec104.rules` (SIDs 3701001-3701308).
 - Suricata rules for the parser's anomaly/DoS app-layer events: malformed/
   oversized PDU, transaction flood (max-tx), and invalid protocol id
   (`rules/s7comm.rules`, SIDs 3700300-3700302; ATT&CK ICS T0814).

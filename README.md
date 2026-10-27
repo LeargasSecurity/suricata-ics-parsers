@@ -106,7 +106,7 @@ sudo make install SURICATA_SRC=/opt/suricata-8.0.6
 # ...or manually:
 sudo mkdir -p /usr/local/lib/suricata/plugins
 sudo cp target/release/libsuricata_s7comm.so /usr/local/lib/suricata/plugins/
-sudo cp rules/s7comm.rules /usr/local/var/lib/suricata/rules/
+sudo cp rules/s7comm.rules rules/iec104.rules /usr/local/var/lib/suricata/rules/
 ```
 
 Enable the plugin and protocol in `suricata.yaml`:
@@ -124,18 +124,25 @@ app-layer:
       # Optional tuning:
       # max-tx: 1024              # live-transaction cap (DoS guard)
       # max-request-size: 131072  # per-PDU byte cap (DoS guard)
+    iec104:
+      enabled: yes
+      detection-ports:
+        dp: 2404
+      # max-tx: 1024
 
 outputs:
   - eve-log:
       enabled: yes
       types:
         - s7comm
+        - iec104
         - alert
         - anomaly
 
 rule-files:
   - suricata.rules
   - s7comm.rules
+  - iec104.rules
 ```
 
 Validate the configuration:
@@ -328,6 +335,53 @@ Fields include (as applicable): `pdu_reference`, `rosctr`, `function_code`,
 
 ---
 
+## IEC 60870-5-104
+
+The same plugin library also registers an `iec104` app-layer parser (TCP/2404).
+Each APDU (I, S, or U format) is one unidirectional transaction. See
+[`doc/iec104-keywords.rst`](doc/iec104-keywords.rst) for full details.
+
+| Keyword | Type | Description |
+| --- | --- | --- |
+| `iec104.type_id` | uint8 | ASDU type (`45` C_SC_NA_1, `100` C_IC_NA_1, …) |
+| `iec104.cot` | uint8 | Cause of transmission (`6` activation, `7` confirmation, …) |
+| `iec104.common_address` | uint16 | ASDU common (station) address |
+| `iec104.ioa` | uint32 | Matches any information object address in the ASDU |
+| `iec104.u_function` | uint8 | U-format function (`0x07` STARTDT act, `0x13` STOPDT act, …) |
+| `iec104.dangerous` | bool | Control commands, setpoints, parameter changes, reset process |
+| `iec104.data` | sticky buffer | Raw APDU |
+
+Frames: `iec104.pdu`, `iec104.asdu`. App-layer events include `command`,
+`interrogation`, `reset_process`, `parameter_change`, `stop_data_transfer`,
+`sequence_mismatch` (N(S) discontinuity), `unknown_address`,
+`asdu_length_mismatch`, and `malformed_apdu`.
+
+`rules/iec104.rules` (SIDs `3701001–3701308`) covers commands (T0855/T0831),
+setpoints and parameters (T0836), reset process (T0816), interrogation and
+address enumeration (T0861), STOPDT (T0815), and protocol anomalies.
+
+Example EVE record (single command, execute ON):
+
+```json
+{
+  "event_type": "iec104",
+  "iec104": {
+    "direction": "to_server",
+    "apci": { "length": 14, "format": "I", "send_seq": 0, "recv_seq": 0 },
+    "asdu": {
+      "type_id": 45, "type_name": "C_SC_NA_1", "sq": false, "num_objects": 1,
+      "cot": 6, "cot_name": "activation", "negative": false, "test": false,
+      "originator": 0, "common_address": 1, "ioa": 5000,
+      "command": { "select": false, "qualifier": 0, "state": 1 }
+    },
+    "is_dangerous": true,
+    "attack_technique": "T0855 Unauthorized Command Message / T0831 Manipulation of Control"
+  }
+}
+```
+
+---
+
 ## Testing
 
 ### Rust unit tests
@@ -414,8 +468,11 @@ src/
   consts.rs           Protocol constants and enums (+ unit tests)
   detect.rs           Detection keyword + sticky-buffer registration
   log.rs              EVE JSON logger
+  iec104/             IEC 60870-5-104 parser (consts, parser, state, detect, log)
 rules/s7comm.rules    Bundled detection signatures
+rules/iec104.rules    IEC 60870-5-104 detection signatures
 doc/s7comm-keywords.rst  Keyword/frame/event reference
+doc/iec104-keywords.rst  IEC 60870-5-104 keyword/frame/event reference
 scripts/
   run-s7comm-pcaps.sh  Batch/loop runner over a pcap directory
 tests/                suricata-verify tests with pcaps
@@ -432,6 +489,9 @@ tests/                suricata-verify tests with pcaps
   real S7-1200/1500 capture.
 - The example rule `3700107` (Write to DB100) is illustrative — tune the
   data-block number to your environment.
+- IEC 60870-5-104 assumes the standard 104 profile (2-byte COT, 2-byte common
+  address, 3-byte IOA). IEC 62351-3 (TLS-wrapped 104) is not decoded. The
+  IEC-104 parser is unit-tested but has no suricata-verify pcap test yet.
 
 ---
 

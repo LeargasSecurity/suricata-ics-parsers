@@ -1,0 +1,214 @@
+# IEC 60870-5-104 Suricata Detection Rules
+# Copyright (C) 2026 Leargas Security
+# License: GPL-2.0
+#
+# These rules require the iec104 app-layer parser from the suricata-ics-parsers
+# plugin. Keywords: iec104.type_id, iec104.cot, iec104.common_address,
+# iec104.ioa, iec104.u_function, iec104.dangerous, iec104.data
+#
+# Many of these operations are routine for an authorised SCADA master. Scope
+# the source to anything other than your control centre(s) to cut noise, e.g.:
+#   alert iec104 !$SCADA_MASTERS any -> $HOME_NET 2404 (...)
+
+# ============================================================================
+# ATT&CK ICS: T0855 Unauthorized Command Message / T0831 Manipulation of Control
+# Control-direction commands (COT 6 = activation)
+# ============================================================================
+
+alert iec104 any any -> any 2404 (msg:"IEC104 Single Command (C_SC_NA_1)"; \
+    iec104.type_id:45; iec104.cot:6; \
+    classtype:attempted-admin; \
+    metadata:attack_target ICS, mitre_attack_technique T0855, mitre_attack_technique T0831; \
+    sid:3701001; rev:1;)
+
+alert iec104 any any -> any 2404 (msg:"IEC104 Double Command (C_DC_NA_1)"; \
+    iec104.type_id:46; iec104.cot:6; \
+    classtype:attempted-admin; \
+    metadata:attack_target ICS, mitre_attack_technique T0855, mitre_attack_technique T0831; \
+    sid:3701002; rev:1;)
+
+alert iec104 any any -> any 2404 (msg:"IEC104 Regulating Step Command (C_RC_NA_1)"; \
+    iec104.type_id:47; iec104.cot:6; \
+    classtype:attempted-admin; \
+    metadata:attack_target ICS, mitre_attack_technique T0855, mitre_attack_technique T0831; \
+    sid:3701003; rev:1;)
+
+alert iec104 any any -> any 2404 (msg:"IEC104 Bitstring Command (C_BO_NA_1)"; \
+    iec104.type_id:51; iec104.cot:6; \
+    classtype:attempted-admin; \
+    metadata:attack_target ICS, mitre_attack_technique T0855; \
+    sid:3701004; rev:1;)
+
+alert iec104 any any -> any 2404 (msg:"IEC104 Time-Tagged Command (C_xx_TA_1)"; \
+    iec104.type_id:>=58; iec104.type_id:<=64; iec104.cot:6; \
+    classtype:attempted-admin; \
+    metadata:attack_target ICS, mitre_attack_technique T0855, mitre_attack_technique T0831; \
+    sid:3701005; rev:1;)
+
+# ============================================================================
+# ATT&CK ICS: T0836 Modify Parameter
+# ============================================================================
+
+alert iec104 any any -> any 2404 (msg:"IEC104 Setpoint Command (C_SE_NA/NB/NC_1)"; \
+    iec104.type_id:>=48; iec104.type_id:<=50; iec104.cot:6; \
+    classtype:attempted-admin; \
+    metadata:attack_target ICS, mitre_attack_technique T0855, mitre_attack_technique T0836; \
+    sid:3701010; rev:1;)
+
+alert iec104 any any -> any 2404 (msg:"IEC104 Parameter Change (P_ME/P_AC)"; \
+    app-layer-event:iec104.parameter_change; \
+    classtype:attempted-admin; \
+    metadata:attack_target ICS, mitre_attack_technique T0836; \
+    sid:3701011; rev:1;)
+
+# ============================================================================
+# ATT&CK ICS: T0816 Device Restart/Shutdown
+# ============================================================================
+
+alert iec104 any any -> any 2404 (msg:"IEC104 Reset Process Command (C_RP_NA_1)"; \
+    iec104.type_id:105; iec104.cot:6; \
+    classtype:attempted-dos; \
+    metadata:attack_target ICS, mitre_attack_technique T0816; \
+    sid:3701020; rev:1;)
+
+# ============================================================================
+# ATT&CK ICS: T0861 Point & Tag Identification (reconnaissance)
+# ============================================================================
+
+alert iec104 any any -> any 2404 (msg:"IEC104 General Interrogation (C_IC_NA_1)"; \
+    iec104.type_id:100; iec104.cot:6; \
+    classtype:attempted-recon; \
+    metadata:attack_target ICS, mitre_attack_technique T0861; \
+    sid:3701030; rev:1;)
+
+alert iec104 any any -> any 2404 (msg:"IEC104 Counter Interrogation (C_CI_NA_1)"; \
+    iec104.type_id:101; iec104.cot:6; \
+    classtype:attempted-recon; \
+    metadata:attack_target ICS, mitre_attack_technique T0861; \
+    sid:3701031; rev:1;)
+
+alert iec104 any any -> any 2404 (msg:"IEC104 Read Command (C_RD_NA_1)"; \
+    iec104.type_id:102; iec104.cot:5; \
+    classtype:attempted-recon; \
+    metadata:attack_target ICS, mitre_attack_technique T0861; \
+    sid:3701032; rev:1;)
+
+# Outstation replied "unknown common address / IOA / type / COT" - typical of
+# a scanner walking addresses it does not know.
+alert iec104 any any -> any any (msg:"IEC104 Unknown Address/Type Response (Possible Enumeration)"; \
+    app-layer-event:iec104.unknown_address; \
+    classtype:attempted-recon; \
+    metadata:attack_target ICS, mitre_attack_technique T0861; \
+    sid:3701033; rev:1;)
+
+# ============================================================================
+# Session control (U-format)
+# ============================================================================
+
+alert iec104 any any -> any 2404 (msg:"IEC104 STARTDT Activation (New Data Session)"; \
+    iec104.u_function:0x07; \
+    classtype:protocol-command-decode; \
+    metadata:attack_target ICS, mitre_attack_technique T0886; \
+    sid:3701040; rev:1;)
+
+# STOPDT halts spontaneous/cyclic data to the master.
+alert iec104 any any -> any 2404 (msg:"IEC104 STOPDT Activation (Data Transfer Stopped)"; \
+    iec104.u_function:0x13; \
+    classtype:attempted-dos; \
+    metadata:attack_target ICS, mitre_attack_technique T0815; \
+    sid:3701041; rev:1;)
+
+# ============================================================================
+# Clock synchronisation and file transfer
+# ============================================================================
+
+alert iec104 any any -> any 2404 (msg:"IEC104 Clock Synchronization Command (C_CS_NA_1)"; \
+    iec104.type_id:103; iec104.cot:6; \
+    classtype:protocol-command-decode; \
+    metadata:attack_target ICS; \
+    sid:3701050; rev:1;)
+
+alert iec104 any any -> any any (msg:"IEC104 File Transfer"; \
+    app-layer-event:iec104.file_transfer; \
+    classtype:protocol-command-decode; \
+    metadata:attack_target ICS; \
+    sid:3701051; rev:1;)
+
+# ============================================================================
+# Commands sent from the outstation side (control direction reversed)
+# ============================================================================
+
+alert iec104 any 2404 -> any any (msg:"IEC104 Command Issued From Outstation Port"; \
+    iec104.dangerous; \
+    classtype:attempted-admin; \
+    metadata:attack_target ICS, mitre_attack_technique T0855; \
+    sid:3701060; rev:1;)
+
+# ============================================================================
+# Catch-all for any dangerous operation (command/setpoint/parameter/reset)
+# ============================================================================
+
+alert iec104 any any -> any 2404 (msg:"IEC104 Dangerous Operation Detected"; \
+    iec104.dangerous; \
+    classtype:attempted-admin; \
+    metadata:attack_target ICS; \
+    sid:3701099; rev:1;)
+
+# ============================================================================
+# Protocol anomalies & DoS (parser app-layer events)
+# ============================================================================
+
+alert iec104 any any -> any any (msg:"IEC104 ANOMALY Malformed APDU"; \
+    app-layer-event:iec104.malformed_apdu; \
+    classtype:protocol-command-decode; \
+    metadata:attack_target ICS, mitre_attack_technique T0814; \
+    sid:3701300; rev:1;)
+
+alert iec104 any any -> any any (msg:"IEC104 ANOMALY Invalid start byte (framing lost)"; \
+    app-layer-event:iec104.invalid_start_byte; \
+    classtype:protocol-command-decode; \
+    metadata:attack_target ICS; \
+    sid:3701301; rev:1;)
+
+alert iec104 any any -> any any (msg:"IEC104 ANOMALY Invalid APDU length"; \
+    app-layer-event:iec104.invalid_length; \
+    classtype:protocol-command-decode; \
+    metadata:attack_target ICS, mitre_attack_technique T0814; \
+    sid:3701302; rev:1;)
+
+alert iec104 any any -> any any (msg:"IEC104 ANOMALY ASDU length does not match object count"; \
+    app-layer-event:iec104.asdu_length_mismatch; \
+    classtype:protocol-command-decode; \
+    metadata:attack_target ICS, mitre_attack_technique T0814; \
+    sid:3701303; rev:1;)
+
+alert iec104 any any -> any any (msg:"IEC104 ANOMALY Unknown type identification"; \
+    app-layer-event:iec104.unknown_type_id; \
+    classtype:protocol-command-decode; \
+    metadata:attack_target ICS; \
+    sid:3701304; rev:1;)
+
+alert iec104 any any -> any any (msg:"IEC104 ANOMALY Invalid cause of transmission"; \
+    app-layer-event:iec104.invalid_cot; \
+    classtype:protocol-command-decode; \
+    metadata:attack_target ICS; \
+    sid:3701305; rev:1;)
+
+alert iec104 any any -> any any (msg:"IEC104 ANOMALY Unknown U-format function"; \
+    app-layer-event:iec104.unknown_u_function; \
+    classtype:protocol-command-decode; \
+    metadata:attack_target ICS; \
+    sid:3701306; rev:1;)
+
+# Send sequence number N(S) jumped. Can indicate injected or replayed I-frames.
+alert iec104 any any -> any any (msg:"IEC104 ANOMALY Send sequence number discontinuity"; \
+    app-layer-event:iec104.sequence_mismatch; \
+    classtype:protocol-command-decode; \
+    metadata:attack_target ICS, mitre_attack_technique T0830; \
+    sid:3701307; rev:1;)
+
+alert iec104 any any -> any any (msg:"IEC104 DoS Transaction flood (max-tx guard tripped)"; \
+    app-layer-event:iec104.too_many_transactions; \
+    classtype:attempted-dos; \
+    metadata:attack_target ICS, mitre_attack_technique T0814; \
+    sid:3701308; rev:1;)

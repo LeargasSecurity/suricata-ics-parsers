@@ -43,7 +43,7 @@ RUN make build SURICATA_SRC="/src/suricata-${SURICATA_VERSION}" \
 # Enable the plugin, the s7comm app-layer, and eve s7comm logging in the config.
 RUN CONF=/usr/local/etc/suricata/suricata.yaml \
     && printf '\n# --- S7comm plugin (added at image build) ---\nplugins:\n  - /usr/local/lib/suricata/plugins/libsuricata_s7comm.so\n' >> "$CONF" \
-    && sed -i 's#^rule-files:#rule-files:\n  - s7comm.rules#' "$CONF" || true
+    && sed -i 's#^rule-files:#rule-files:\n  - s7comm.rules\n  - iec104.rules#' "$CONF" || true
 
 # ---------------------------------------------------------------------------
 FROM ubuntu:24.04 AS runtime

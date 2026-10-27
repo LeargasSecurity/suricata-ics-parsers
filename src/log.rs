@@ -6,28 +6,29 @@ use crate::s7comm::S7commTransaction;
 use std::ffi::CString;
 use suricata::cast_pointer;
 use suricata_sys::jsonbuilder::{
-    SCJbClose, SCJbOpenObject, SCJbSetBool, SCJbSetString, SCJbSetUint, SCJsonBuilder,
+    SCJbClose, SCJbOpenObject, SCJbSetBool, SCJbSetFloat, SCJbSetInt, SCJbSetString, SCJbSetUint,
+    SCJsonBuilder,
 };
 
 pub struct SCJsonBuilderWrapper {
-    inner: *mut SCJsonBuilder,
+    pub(crate) inner: *mut SCJsonBuilder,
 }
 
 impl SCJsonBuilderWrapper {
-    fn close(&mut self) -> Result<(), ()> {
+    pub(crate) fn close(&mut self) -> Result<(), ()> {
         if unsafe { !SCJbClose(self.inner) } {
             return Err(());
         }
         Ok(())
     }
-    fn open_object(&mut self, key: &str) -> Result<(), ()> {
+    pub(crate) fn open_object(&mut self, key: &str) -> Result<(), ()> {
         let keyc = CString::new(key).unwrap();
         if unsafe { !SCJbOpenObject(self.inner, keyc.as_ptr()) } {
             return Err(());
         }
         Ok(())
     }
-    fn set_string(&mut self, key: &str, val: &str) -> Result<(), ()> {
+    pub(crate) fn set_string(&mut self, key: &str, val: &str) -> Result<(), ()> {
         let keyc = CString::new(key).unwrap();
         let valc = CString::new(val.escape_default().to_string()).unwrap();
         if unsafe { !SCJbSetString(self.inner, keyc.as_ptr(), valc.as_ptr()) } {
@@ -35,14 +36,28 @@ impl SCJsonBuilderWrapper {
         }
         Ok(())
     }
-    fn set_uint(&mut self, key: &str, val: u64) -> Result<(), ()> {
+    pub(crate) fn set_uint(&mut self, key: &str, val: u64) -> Result<(), ()> {
         let keyc = CString::new(key).unwrap();
         if unsafe { !SCJbSetUint(self.inner, keyc.as_ptr(), val) } {
             return Err(());
         }
         Ok(())
     }
-    fn set_bool(&mut self, key: &str, val: bool) -> Result<(), ()> {
+    pub(crate) fn set_int(&mut self, key: &str, val: i64) -> Result<(), ()> {
+        let keyc = CString::new(key).unwrap();
+        if unsafe { !SCJbSetInt(self.inner, keyc.as_ptr(), val) } {
+            return Err(());
+        }
+        Ok(())
+    }
+    pub(crate) fn set_float(&mut self, key: &str, val: f64) -> Result<(), ()> {
+        let keyc = CString::new(key).unwrap();
+        if unsafe { !SCJbSetFloat(self.inner, keyc.as_ptr(), val) } {
+            return Err(());
+        }
+        Ok(())
+    }
+    pub(crate) fn set_bool(&mut self, key: &str, val: bool) -> Result<(), ()> {
         let keyc = CString::new(key).unwrap();
         if unsafe { !SCJbSetBool(self.inner, keyc.as_ptr(), val) } {
             return Err(());
