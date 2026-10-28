@@ -60,7 +60,59 @@ pub struct CotpConnectInfo {
 pub struct CotpPdu<'a> {
     pub pdu_type: u8,
     pub connect: Option<CotpConnectInfo>,
+    /// DT only: end-of-TSDU flag. False means the message continues in the next DT.
+    pub eot: bool,
     pub payload: &'a [u8],
+}
+
+/// Result of feeding one COTP DT to a [`CotpReassembler`].
+#[derive(Debug, PartialEq, Eq)]
+pub enum DtAssembly {
+    /// A complete TSDU (one upper-layer message).
+    Complete(Vec<u8>),
+    /// More DTs are needed.
+    Partial,
+    /// The message exceeded the size limit and is being discarded up to its last DT.
+    Overflow,
+}
+
+/// Joins COTP DT segments into complete TSDUs, for one direction of a connection.
+#[derive(Debug, Default)]
+pub struct CotpReassembler {
+    buf: Vec<u8>,
+    discarding: bool,
+}
+
+impl CotpReassembler {
+    /// Add one DT payload. `max_len` bounds the reassembled message size.
+    pub fn push(&mut self, data: &[u8], eot: bool, max_len: usize) -> DtAssembly {
+        if self.discarding {
+            if eot {
+                self.discarding = false;
+            }
+            return DtAssembly::Partial;
+        }
+        if self.buf.len() + data.len() > max_len {
+            self.buf = Vec::new();
+            self.discarding = !eot;
+            return DtAssembly::Overflow;
+        }
+        if eot {
+            if self.buf.is_empty() {
+                return DtAssembly::Complete(data.to_vec());
+            }
+            self.buf.extend_from_slice(data);
+            return DtAssembly::Complete(std::mem::take(&mut self.buf));
+        }
+        self.buf.extend_from_slice(data);
+        DtAssembly::Partial
+    }
+
+    /// Drop any partial message (e.g. after a stream gap).
+    pub fn reset(&mut self) {
+        self.buf = Vec::new();
+        self.discarding = false;
+    }
 }
 
 /// Upper-layer protocol carried in a COTP DT on TCP/102.
@@ -157,12 +209,15 @@ pub fn parse_tpkt_cotp(input: &[u8]) -> IResult<&[u8], CotpPdu<'_>> {
     } else {
         None
     };
+    // DT fixed part: TPDU-NR with the EOT flag in the top bit (class 0/1).
+    let eot = pdu_type != COTP_DT || fixed.first().map_or(true, |nr| nr & 0x80 != 0);
 
     Ok((
         rem,
         CotpPdu {
             pdu_type,
             connect,
+            eot,
             payload,
         },
     ))
@@ -287,8 +342,52 @@ mod tests {
         let (_, pdu) = parse_tpkt_cotp(S7_SETUP_DT).unwrap();
         assert_eq!(pdu.pdu_type, COTP_DT);
         assert!(pdu.connect.is_none());
+        assert!(pdu.eot);
         assert_eq!(pdu.payload.len(), 18);
         assert_eq!(pdu.payload[0], S7COMM_PROTOCOL_ID);
+    }
+
+    #[test]
+    fn test_parse_dt_eot_clear() {
+        // DT with TPDU-NR 0 and EOT=0: the TSDU continues in the next DT.
+        let dt = [0x03, 0x00, 0x00, 0x09, 0x02, 0xF0, 0x00, 0xAA, 0xBB];
+        let (_, pdu) = parse_tpkt_cotp(&dt).unwrap();
+        assert!(!pdu.eot);
+        assert_eq!(pdu.payload, &[0xAA, 0xBB]);
+    }
+
+    #[test]
+    fn test_reassemble_segments() {
+        let mut r = CotpReassembler::default();
+        assert_eq!(r.push(&[1], true, 16), DtAssembly::Complete(vec![1]));
+        assert_eq!(r.push(&[1, 2], false, 16), DtAssembly::Partial);
+        assert_eq!(r.push(&[3], false, 16), DtAssembly::Partial);
+        assert_eq!(
+            r.push(&[4], true, 16),
+            DtAssembly::Complete(vec![1, 2, 3, 4])
+        );
+        // Buffer is empty again afterwards.
+        assert_eq!(r.push(&[9], true, 16), DtAssembly::Complete(vec![9]));
+    }
+
+    #[test]
+    fn test_reassemble_overflow_discards_rest_of_message() {
+        let mut r = CotpReassembler::default();
+        assert_eq!(r.push(&[0; 8], false, 10), DtAssembly::Partial);
+        assert_eq!(r.push(&[0; 8], false, 10), DtAssembly::Overflow);
+        // Remaining segments of the oversized message are dropped, not parsed.
+        assert_eq!(r.push(&[0; 8], false, 10), DtAssembly::Partial);
+        assert_eq!(r.push(&[0; 2], true, 10), DtAssembly::Partial);
+        // The next message is reassembled normally.
+        assert_eq!(r.push(&[7], true, 10), DtAssembly::Complete(vec![7]));
+    }
+
+    #[test]
+    fn test_reassemble_reset() {
+        let mut r = CotpReassembler::default();
+        assert_eq!(r.push(&[1, 2], false, 16), DtAssembly::Partial);
+        r.reset();
+        assert_eq!(r.push(&[3], true, 16), DtAssembly::Complete(vec![3]));
     }
 
     #[test]
