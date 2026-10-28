@@ -1,0 +1,11 @@
+alert s7comm any any -> any 102 (msg:"S7COMM Write Variable"; \
+    s7comm.function_code:0x05; s7comm.rosctr:1; \
+    classtype:attempted-admin; sid:3700009; rev:1;)
+
+alert s7comm any any -> any 102 (msg:"S7COMM Write to Flags/Merker Area"; \
+    s7comm.function_code:0x05; s7comm.area:0x83; \
+    classtype:attempted-admin; sid:3700106; rev:1;)
+
+alert s7comm any any -> any 102 (msg:"S7COMM Read Variable from DB1"; \
+    s7comm.function_code:0x04; s7comm.db:1; \
+    classtype:protocol-command-decode; sid:3700200; rev:1;)

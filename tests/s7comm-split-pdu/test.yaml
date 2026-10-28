@@ -1,0 +1,50 @@
+requires:
+  min-version: 8.0.0
+  # Absolute path to libsuricata_s7comm.so. The test is skipped when unset.
+  env:
+    - SURICATA_ICS_PLUGIN
+
+command: |
+  ${SRCDIR}/src/suricata --init-errors-fatal -k none \
+      --set plugins.0="${SURICATA_ICS_PLUGIN}" \
+      --set classification-file="${SRCDIR}/etc/classification.config" \
+      --set reference-config-file="${SRCDIR}/etc/reference.config" \
+      -c "${TEST_DIR}/suricata.yaml" -l "${OUTPUT_DIR}" \
+      -r "${TEST_DIR}/input.pcap" -S "${TEST_DIR}/test.rules"
+
+checks:
+  # Same S7comm output as s7comm-write-var although the first Job PDU after
+  # Setup Communication is split 3/4 + 1/4 across two TCP segments. Before
+  # the TPKT/COTP refactor the parser returned an invalid incomplete() result
+  # here and stopped after the Setup Communication PDU.
+  - filter:
+      count: 8
+      match:
+        event_type: s7comm
+        s7comm.cotp.rack: 0
+        s7comm.cotp.slot: 2
+  - filter:
+      count: 3
+      match:
+        event_type: s7comm
+        s7comm.function_name: "Read Variable"
+  - filter:
+      count: 4
+      match:
+        event_type: s7comm
+        s7comm.function_name: "Write Variable"
+  - filter:
+      count: 4
+      match:
+        event_type: alert
+        alert.signature_id: 3700009
+  - filter:
+      count: 4
+      match:
+        event_type: alert
+        alert.signature_id: 3700106
+  - filter:
+      count: 1
+      match:
+        event_type: alert
+        alert.signature_id: 3700200

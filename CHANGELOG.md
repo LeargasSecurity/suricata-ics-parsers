@@ -18,6 +18,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the plugin from `SURICATA_ICS_PLUGIN` and run with `--no-validation`.
 - `scripts/gen-iec104-pcaps.py`: standard-library generator for synthetic
   IEC 60870-5-104 pcaps covering every rule in `rules/iec104.rules`.
+- suricata-verify regression tests for TCP/102: `s7comm-split-pdu` (S7 PDU
+  split across TCP segments) and `iso102-not-s7comm` (ISO session/MMS traffic
+  is not labelled `s7comm`), with pcaps generated from `s7comm-write-var` by
+  `scripts/gen-iso102-regress-pcaps.py`.
 - Suricata rules for the parser's anomaly/DoS app-layer events: malformed/
   oversized PDU, transaction flood (max-tx), and invalid protocol id
   (`rules/s7comm.rules`, SIDs 3700300-3700302; ATT&CK ICS T0814).
