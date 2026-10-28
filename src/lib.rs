@@ -7,6 +7,7 @@ mod cotp;
 mod detect;
 mod iec104;
 mod log;
+mod mms;
 mod parser;
 pub mod plugin;
 mod s7comm;

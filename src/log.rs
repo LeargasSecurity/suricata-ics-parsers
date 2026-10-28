@@ -6,8 +6,8 @@ use crate::s7comm::S7commTransaction;
 use std::ffi::CString;
 use suricata::cast_pointer;
 use suricata_sys::jsonbuilder::{
-    SCJbClose, SCJbOpenObject, SCJbSetBool, SCJbSetFloat, SCJbSetInt, SCJbSetString, SCJbSetUint,
-    SCJsonBuilder,
+    SCJbAppendString, SCJbClose, SCJbOpenArray, SCJbOpenObject, SCJbSetBool, SCJbSetFloat,
+    SCJbSetInt, SCJbSetString, SCJbSetUint, SCJbStartObject, SCJsonBuilder,
 };
 
 pub struct SCJsonBuilderWrapper {
@@ -60,6 +60,27 @@ impl SCJsonBuilderWrapper {
     pub(crate) fn set_bool(&mut self, key: &str, val: bool) -> Result<(), ()> {
         let keyc = CString::new(key).unwrap();
         if unsafe { !SCJbSetBool(self.inner, keyc.as_ptr(), val) } {
+            return Err(());
+        }
+        Ok(())
+    }
+    pub(crate) fn open_array(&mut self, key: &str) -> Result<(), ()> {
+        let keyc = CString::new(key).unwrap();
+        if unsafe { !SCJbOpenArray(self.inner, keyc.as_ptr()) } {
+            return Err(());
+        }
+        Ok(())
+    }
+    /// Start an anonymous object inside an open array.
+    pub(crate) fn start_object(&mut self) -> Result<(), ()> {
+        if unsafe { !SCJbStartObject(self.inner) } {
+            return Err(());
+        }
+        Ok(())
+    }
+    pub(crate) fn append_string(&mut self, val: &str) -> Result<(), ()> {
+        let valc = CString::new(val.escape_default().to_string()).unwrap();
+        if unsafe { !SCJbAppendString(self.inner, valc.as_ptr()) } {
             return Err(());
         }
         Ok(())

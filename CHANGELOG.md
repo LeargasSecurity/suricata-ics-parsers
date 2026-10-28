@@ -7,6 +7,29 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- MMS app-layer parser (`mms`, TCP/102) in the same plugin, for IEC 61850
+  client/server traffic and ICCP / TASE.2: COTP DT reassembly, ISO 8327
+  session, ISO 8823 presentation, ACSE and MMS decoding with `der-parser`
+  (the same version as Suricata 8.0.x). Requests and responses are paired by
+  invoke ID; the association is logged with application context, AP titles,
+  authentication mechanism and the negotiated MMS parameters (never the
+  password). Detects IEC 61850 controls and setting writes, data set changes,
+  ICCP transfer set configuration (names learned from `Next_DSTransfer_Set`
+  reads), program control, domain download/upload, deletions and file
+  transfer, with ATT&CK-ICS mapping. 7 detection keywords (`mms.pdu_type`,
+  `mms.service`, `mms.dangerous`, `mms.iccp_transfer_set`, and the
+  `mms.domain`/`mms.item`/`mms.filename` multi-buffers), the `mms.pdu` frame,
+  EVE `mms` logging, anomaly events, `rules/mms.rules` (SIDs
+  3702001-3702303) and `doc/mms-keywords.rst`. Config:
+  `app-layer.protocols.mms.max-tx` and `max-message-size`. At `max-tx` live
+  transactions, pending requests are closed and parsing of the flow
+  continues, so unanswered requests cannot switch off inspection.
+- `CotpReassembler` in the shared `cotp` module: joins COTP DT segments
+  (EOT flag) into complete messages, with a size limit.
+- suricata-verify tests `mms-iec61850-control`, `mms-iccp`, `mms-dataset`,
+  `mms-file-segmented`, `mms-max-message-size` and `mms-auth`, and
+  `scripts/gen-mms-pcaps.sh`, which generates their captures with
+  libIEC61850 at a pinned commit.
 - IEC 60870-5-104 app-layer parser (`iec104`, TCP/2404) in the same plugin:
   APCI I/S/U framing, ASDU header, IOA extraction, command/setpoint decoding
   (select/execute, state, value), N(S) continuity tracking, 7 detection
@@ -36,6 +59,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   issue templates, and a pull-request template.
 
 ### Changed
+- TCP/102 flows whose first COTP DT carries an ISO 8327 session SPDU are now
+  claimed by the `mms` parser (`app_proto: mms`) instead of ending as
+  `failed`. The `iso102-not-s7comm` test expects this.
 - TPKT/COTP handling for TCP/102 moved into a shared `cotp` module
   (`tpkt_frame()`, `parse_tpkt_cotp()`, `probe_iso102()`) so future ISO-stack
   parsers (MMS, IEC 61850, ICCP) can reuse it. The S7comm parser and both

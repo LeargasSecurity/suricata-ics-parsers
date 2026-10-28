@@ -7,6 +7,9 @@ use crate::iec104::detect::detect_iec104_register;
 use crate::iec104::log::iec104_logger_log;
 use crate::iec104::state::iec104_register_parser;
 use crate::log::s7comm_logger_log;
+use crate::mms::detect::detect_mms_register;
+use crate::mms::log::mms_logger_log;
+use crate::mms::state::mms_register_parser;
 use crate::s7comm::s7comm_register_parser;
 use std::ffi::CString;
 use suricata::{SCLogError, SCLogNotice};
@@ -46,6 +49,22 @@ extern "C" fn s7comm_plugin_init() {
     unsafe {
         if SCPluginRegisterAppLayer(Box::into_raw(Box::new(plugin))) != 0 {
             SCLogError!("Failed to register IEC 60870-5-104 plugin");
+        }
+    }
+
+    SCLogNotice!("Initializing MMS (IEC 61850 / ICCP) ICS protocol parser plugin");
+    let plugin = SCAppLayerPlugin {
+        name: b"mms\0".as_ptr() as *const libc::c_char,
+        logname: b"JsonMmsLog\0".as_ptr() as *const libc::c_char,
+        confname: b"eve-log.mms\0".as_ptr() as *const libc::c_char,
+        dir: SCOutputJsonLogDirection::LOG_DIR_PACKET as u8,
+        Register: Some(mms_register_parser),
+        Logger: Some(mms_logger_log),
+        KeywordsRegister: Some(detect_mms_register),
+    };
+    unsafe {
+        if SCPluginRegisterAppLayer(Box::into_raw(Box::new(plugin))) != 0 {
+            SCLogError!("Failed to register MMS plugin");
         }
     }
 }
