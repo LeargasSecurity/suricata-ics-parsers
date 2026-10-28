@@ -33,10 +33,18 @@ the generated `Cargo.toml` directly.
 - [ ] New protocol behavior has a **suricata-verify** test under `tests/`
       (a PCAP, `test.rules`, and output assertions) — see existing tests as a
       template.
-- [ ] New detection keywords / EVE fields are documented in
-      `doc/s7comm-keywords.rst` and the README tables.
-- [ ] New rules use a SID in the project range (`3700000`–`3700999`) and carry
-      an ATT&CK-ICS reference where applicable.
+- [ ] New detection keywords / EVE fields are documented in the protocol's
+      `doc/*-keywords.rst` and the README tables.
+- [ ] New rules use a SID in the protocol's range and carry an ATT&CK-ICS
+      reference where applicable:
+
+      | Protocol | Rules file | SID range |
+      | --- | --- | --- |
+      | S7comm | `rules/s7comm.rules` | `3700000`–`3700999` |
+      | IEC 60870-5-104 | `rules/iec104.rules` | `3701000`–`3701999` |
+      | MMS / IEC 61850 / ICCP | `rules/mms.rules` | `3702000`–`3702999` |
+
+      A new protocol takes the next `37xx000` block.
 - [ ] Commit messages are descriptive; reference an issue where relevant.
 
 ## Reporting bugs / requesting features
