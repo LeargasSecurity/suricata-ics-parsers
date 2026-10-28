@@ -36,7 +36,9 @@ static mut G_S7COMM_DATA_BUFFER_ID: c_int = 0;
 // --- function_code keyword ---
 
 unsafe extern "C" fn s7comm_function_code_setup(
-    de: *mut DetectEngineCtx, s: *mut Signature, raw: *const libc::c_char,
+    de: *mut DetectEngineCtx,
+    s: *mut Signature,
+    raw: *const libc::c_char,
 ) -> c_int {
     if SCDetectSignatureSetAppProto(s, ALPROTO_S7COMM) != 0 {
         return -1;
@@ -61,8 +63,13 @@ unsafe extern "C" fn s7comm_function_code_setup(
 }
 
 unsafe extern "C" fn s7comm_function_code_match(
-    _de: *mut DetectEngineThreadCtx, _f: *mut Flow, _flags: u8, _state: *mut c_void,
-    tx: *mut c_void, _sig: *const Signature, ctx: *const SigMatchCtx,
+    _de: *mut DetectEngineThreadCtx,
+    _f: *mut Flow,
+    _flags: u8,
+    _state: *mut c_void,
+    tx: *mut c_void,
+    _sig: *const Signature,
+    ctx: *const SigMatchCtx,
 ) -> c_int {
     let tx = cast_pointer!(tx, S7commTransaction);
     let ctx = cast_pointer!(ctx, DetectUintData<u8>);
@@ -72,7 +79,9 @@ unsafe extern "C" fn s7comm_function_code_match(
 // --- rosctr keyword ---
 
 unsafe extern "C" fn s7comm_rosctr_setup(
-    de: *mut DetectEngineCtx, s: *mut Signature, raw: *const libc::c_char,
+    de: *mut DetectEngineCtx,
+    s: *mut Signature,
+    raw: *const libc::c_char,
 ) -> c_int {
     if SCDetectSignatureSetAppProto(s, ALPROTO_S7COMM) != 0 {
         return -1;
@@ -97,8 +106,13 @@ unsafe extern "C" fn s7comm_rosctr_setup(
 }
 
 unsafe extern "C" fn s7comm_rosctr_match(
-    _de: *mut DetectEngineThreadCtx, _f: *mut Flow, _flags: u8, _state: *mut c_void,
-    tx: *mut c_void, _sig: *const Signature, ctx: *const SigMatchCtx,
+    _de: *mut DetectEngineThreadCtx,
+    _f: *mut Flow,
+    _flags: u8,
+    _state: *mut c_void,
+    tx: *mut c_void,
+    _sig: *const Signature,
+    ctx: *const SigMatchCtx,
 ) -> c_int {
     let tx = cast_pointer!(tx, S7commTransaction);
     let ctx = cast_pointer!(ctx, DetectUintData<u8>);
@@ -108,7 +122,9 @@ unsafe extern "C" fn s7comm_rosctr_match(
 // --- dangerous keyword ---
 
 unsafe extern "C" fn s7comm_dangerous_setup(
-    de: *mut DetectEngineCtx, s: *mut Signature, _raw: *const libc::c_char,
+    de: *mut DetectEngineCtx,
+    s: *mut Signature,
+    _raw: *const libc::c_char,
 ) -> c_int {
     if SCDetectSignatureSetAppProto(s, ALPROTO_S7COMM) != 0 {
         return -1;
@@ -128,8 +144,13 @@ unsafe extern "C" fn s7comm_dangerous_setup(
 }
 
 unsafe extern "C" fn s7comm_dangerous_match(
-    _de: *mut DetectEngineThreadCtx, _f: *mut Flow, _flags: u8, _state: *mut c_void,
-    tx: *mut c_void, _sig: *const Signature, _ctx: *const SigMatchCtx,
+    _de: *mut DetectEngineThreadCtx,
+    _f: *mut Flow,
+    _flags: u8,
+    _state: *mut c_void,
+    tx: *mut c_void,
+    _sig: *const Signature,
+    _ctx: *const SigMatchCtx,
 ) -> c_int {
     let tx = cast_pointer!(tx, S7commTransaction);
     if tx.is_dangerous {
@@ -142,7 +163,9 @@ unsafe extern "C" fn s7comm_dangerous_match(
 // --- userdata_group keyword ---
 
 unsafe extern "C" fn s7comm_userdata_group_setup(
-    de: *mut DetectEngineCtx, s: *mut Signature, raw: *const libc::c_char,
+    de: *mut DetectEngineCtx,
+    s: *mut Signature,
+    raw: *const libc::c_char,
 ) -> c_int {
     if SCDetectSignatureSetAppProto(s, ALPROTO_S7COMM) != 0 {
         return -1;
@@ -167,8 +190,13 @@ unsafe extern "C" fn s7comm_userdata_group_setup(
 }
 
 unsafe extern "C" fn s7comm_userdata_group_match(
-    _de: *mut DetectEngineThreadCtx, _f: *mut Flow, _flags: u8, _state: *mut c_void,
-    tx: *mut c_void, _sig: *const Signature, ctx: *const SigMatchCtx,
+    _de: *mut DetectEngineThreadCtx,
+    _f: *mut Flow,
+    _flags: u8,
+    _state: *mut c_void,
+    tx: *mut c_void,
+    _sig: *const Signature,
+    ctx: *const SigMatchCtx,
 ) -> c_int {
     let tx = cast_pointer!(tx, S7commTransaction);
     let ctx = cast_pointer!(ctx, DetectUintData<u8>);
@@ -178,7 +206,9 @@ unsafe extern "C" fn s7comm_userdata_group_match(
 // --- subfunction keyword ---
 
 unsafe extern "C" fn s7comm_subfunction_setup(
-    de: *mut DetectEngineCtx, s: *mut Signature, raw: *const libc::c_char,
+    de: *mut DetectEngineCtx,
+    s: *mut Signature,
+    raw: *const libc::c_char,
 ) -> c_int {
     if SCDetectSignatureSetAppProto(s, ALPROTO_S7COMM) != 0 {
         return -1;
@@ -203,8 +233,13 @@ unsafe extern "C" fn s7comm_subfunction_setup(
 }
 
 unsafe extern "C" fn s7comm_subfunction_match(
-    _de: *mut DetectEngineThreadCtx, _f: *mut Flow, _flags: u8, _state: *mut c_void,
-    tx: *mut c_void, _sig: *const Signature, ctx: *const SigMatchCtx,
+    _de: *mut DetectEngineThreadCtx,
+    _f: *mut Flow,
+    _flags: u8,
+    _state: *mut c_void,
+    tx: *mut c_void,
+    _sig: *const Signature,
+    ctx: *const SigMatchCtx,
 ) -> c_int {
     let tx = cast_pointer!(tx, S7commTransaction);
     let ctx = cast_pointer!(ctx, DetectUintData<u8>);
@@ -214,7 +249,9 @@ unsafe extern "C" fn s7comm_subfunction_match(
 // --- plus keyword ---
 
 unsafe extern "C" fn s7comm_plus_setup(
-    de: *mut DetectEngineCtx, s: *mut Signature, _raw: *const libc::c_char,
+    de: *mut DetectEngineCtx,
+    s: *mut Signature,
+    _raw: *const libc::c_char,
 ) -> c_int {
     if SCDetectSignatureSetAppProto(s, ALPROTO_S7COMM) != 0 {
         return -1;
@@ -234,8 +271,13 @@ unsafe extern "C" fn s7comm_plus_setup(
 }
 
 unsafe extern "C" fn s7comm_plus_match(
-    _de: *mut DetectEngineThreadCtx, _f: *mut Flow, _flags: u8, _state: *mut c_void,
-    tx: *mut c_void, _sig: *const Signature, _ctx: *const SigMatchCtx,
+    _de: *mut DetectEngineThreadCtx,
+    _f: *mut Flow,
+    _flags: u8,
+    _state: *mut c_void,
+    tx: *mut c_void,
+    _sig: *const Signature,
+    _ctx: *const SigMatchCtx,
 ) -> c_int {
     let tx = cast_pointer!(tx, S7commTransaction);
     if tx.is_s7comm_plus {
@@ -260,7 +302,9 @@ unsafe extern "C" fn s7comm_detect_u16_free(_de: *mut DetectEngineCtx, ctx: *mut
 // --- db keyword (u16) ---
 
 unsafe extern "C" fn s7comm_db_setup(
-    de: *mut DetectEngineCtx, s: *mut Signature, raw: *const libc::c_char,
+    de: *mut DetectEngineCtx,
+    s: *mut Signature,
+    raw: *const libc::c_char,
 ) -> c_int {
     if SCDetectSignatureSetAppProto(s, ALPROTO_S7COMM) != 0 {
         return -1;
@@ -285,8 +329,13 @@ unsafe extern "C" fn s7comm_db_setup(
 }
 
 unsafe extern "C" fn s7comm_db_match(
-    _de: *mut DetectEngineThreadCtx, _f: *mut Flow, _flags: u8, _state: *mut c_void,
-    tx: *mut c_void, _sig: *const Signature, ctx: *const SigMatchCtx,
+    _de: *mut DetectEngineThreadCtx,
+    _f: *mut Flow,
+    _flags: u8,
+    _state: *mut c_void,
+    tx: *mut c_void,
+    _sig: *const Signature,
+    ctx: *const SigMatchCtx,
 ) -> c_int {
     let tx = cast_pointer!(tx, S7commTransaction);
     if !tx.has_data_item {
@@ -299,7 +348,9 @@ unsafe extern "C" fn s7comm_db_match(
 // --- area keyword (u8) ---
 
 unsafe extern "C" fn s7comm_area_setup(
-    de: *mut DetectEngineCtx, s: *mut Signature, raw: *const libc::c_char,
+    de: *mut DetectEngineCtx,
+    s: *mut Signature,
+    raw: *const libc::c_char,
 ) -> c_int {
     if SCDetectSignatureSetAppProto(s, ALPROTO_S7COMM) != 0 {
         return -1;
@@ -324,8 +375,13 @@ unsafe extern "C" fn s7comm_area_setup(
 }
 
 unsafe extern "C" fn s7comm_area_match(
-    _de: *mut DetectEngineThreadCtx, _f: *mut Flow, _flags: u8, _state: *mut c_void,
-    tx: *mut c_void, _sig: *const Signature, ctx: *const SigMatchCtx,
+    _de: *mut DetectEngineThreadCtx,
+    _f: *mut Flow,
+    _flags: u8,
+    _state: *mut c_void,
+    tx: *mut c_void,
+    _sig: *const Signature,
+    ctx: *const SigMatchCtx,
 ) -> c_int {
     let tx = cast_pointer!(tx, S7commTransaction);
     if !tx.has_data_item {
@@ -338,7 +394,9 @@ unsafe extern "C" fn s7comm_area_match(
 // --- plus_function keyword (u16) ---
 
 unsafe extern "C" fn s7comm_plus_function_setup(
-    de: *mut DetectEngineCtx, s: *mut Signature, raw: *const libc::c_char,
+    de: *mut DetectEngineCtx,
+    s: *mut Signature,
+    raw: *const libc::c_char,
 ) -> c_int {
     if SCDetectSignatureSetAppProto(s, ALPROTO_S7COMM) != 0 {
         return -1;
@@ -363,8 +421,13 @@ unsafe extern "C" fn s7comm_plus_function_setup(
 }
 
 unsafe extern "C" fn s7comm_plus_function_match(
-    _de: *mut DetectEngineThreadCtx, _f: *mut Flow, _flags: u8, _state: *mut c_void,
-    tx: *mut c_void, _sig: *const Signature, ctx: *const SigMatchCtx,
+    _de: *mut DetectEngineThreadCtx,
+    _f: *mut Flow,
+    _flags: u8,
+    _state: *mut c_void,
+    tx: *mut c_void,
+    _sig: *const Signature,
+    ctx: *const SigMatchCtx,
 ) -> c_int {
     let tx = cast_pointer!(tx, S7commTransaction);
     if !tx.is_s7comm_plus {
@@ -377,7 +440,9 @@ unsafe extern "C" fn s7comm_plus_function_match(
 // --- data sticky buffer ---
 
 unsafe extern "C" fn s7comm_data_setup(
-    de: *mut DetectEngineCtx, s: *mut Signature, _raw: *const libc::c_char,
+    de: *mut DetectEngineCtx,
+    s: *mut Signature,
+    _raw: *const libc::c_char,
 ) -> c_int {
     if SCDetectSignatureSetAppProto(s, ALPROTO_S7COMM) != 0 {
         return -1;
@@ -389,7 +454,10 @@ unsafe extern "C" fn s7comm_data_setup(
 }
 
 unsafe extern "C" fn s7comm_data_get(
-    tx: *const c_void, flags: u8, buf: *mut *const u8, len: *mut u32,
+    tx: *const c_void,
+    flags: u8,
+    buf: *mut *const u8,
+    len: *mut u32,
 ) -> bool {
     let tx = cast_pointer!(tx, S7commTransaction);
     if flags & Direction::ToClient as u8 != 0 {

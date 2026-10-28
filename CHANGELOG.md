@@ -53,6 +53,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   The parser reported the bytes still missing from `AppLayerResult::incomplete()`
   instead of the total PDU size, which Suricata treats as an internal error
   when more than about half the PDU had already arrived.
+- The CI rustfmt check now actually checks the code. `cargo fmt` needs the
+  generated `Cargo.toml`, so it always failed before reading any source and was
+  marked non-blocking; CI now runs `rustfmt --check src/lib.rs` as a blocking
+  check, and the crate has been formatted to pass it.
 - suricata-verify tests now actually run: `s7comm-*` tests no longer use the
   unsupported `requires: plugins` and `min:` keys, load the plugin from
   `SURICATA_ICS_PLUGIN`, and enable EVE output in their configs. The

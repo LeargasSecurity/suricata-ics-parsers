@@ -33,14 +33,26 @@ static mut G_IEC104_DATA_BUFFER_ID: c_int = 0;
 // --- shared setup / free helpers ---
 
 unsafe fn append_sm(
-    de: *mut DetectEngineCtx, s: *mut Signature, kw_id: u16, ctx: *mut c_void,
+    de: *mut DetectEngineCtx,
+    s: *mut Signature,
+    kw_id: u16,
+    ctx: *mut c_void,
 ) -> bool {
-    !SCSigMatchAppendSMToList(de, s, kw_id, ctx as *mut SigMatchCtx, G_IEC104_GENERIC_BUFFER_ID)
-        .is_null()
+    !SCSigMatchAppendSMToList(
+        de,
+        s,
+        kw_id,
+        ctx as *mut SigMatchCtx,
+        G_IEC104_GENERIC_BUFFER_ID,
+    )
+    .is_null()
 }
 
 unsafe fn setup_u8(
-    de: *mut DetectEngineCtx, s: *mut Signature, raw: *const libc::c_char, kw_id: u16,
+    de: *mut DetectEngineCtx,
+    s: *mut Signature,
+    raw: *const libc::c_char,
+    kw_id: u16,
 ) -> c_int {
     if SCDetectSignatureSetAppProto(s, ALPROTO_IEC104) != 0 {
         return -1;
@@ -57,7 +69,10 @@ unsafe fn setup_u8(
 }
 
 unsafe fn setup_u16(
-    de: *mut DetectEngineCtx, s: *mut Signature, raw: *const libc::c_char, kw_id: u16,
+    de: *mut DetectEngineCtx,
+    s: *mut Signature,
+    raw: *const libc::c_char,
+    kw_id: u16,
 ) -> c_int {
     if SCDetectSignatureSetAppProto(s, ALPROTO_IEC104) != 0 {
         return -1;
@@ -74,7 +89,10 @@ unsafe fn setup_u16(
 }
 
 unsafe fn setup_u32(
-    de: *mut DetectEngineCtx, s: *mut Signature, raw: *const libc::c_char, kw_id: u16,
+    de: *mut DetectEngineCtx,
+    s: *mut Signature,
+    raw: *const libc::c_char,
+    kw_id: u16,
 ) -> c_int {
     if SCDetectSignatureSetAppProto(s, ALPROTO_IEC104) != 0 {
         return -1;
@@ -108,14 +126,21 @@ unsafe extern "C" fn iec104_detect_u32_free(_de: *mut DetectEngineCtx, ctx: *mut
 // --- type_id keyword (u8) ---
 
 unsafe extern "C" fn iec104_type_id_setup(
-    de: *mut DetectEngineCtx, s: *mut Signature, raw: *const libc::c_char,
+    de: *mut DetectEngineCtx,
+    s: *mut Signature,
+    raw: *const libc::c_char,
 ) -> c_int {
     setup_u8(de, s, raw, G_IEC104_TYPE_ID_KW_ID)
 }
 
 unsafe extern "C" fn iec104_type_id_match(
-    _de: *mut DetectEngineThreadCtx, _f: *mut Flow, _flags: u8, _state: *mut c_void,
-    tx: *mut c_void, _sig: *const Signature, ctx: *const SigMatchCtx,
+    _de: *mut DetectEngineThreadCtx,
+    _f: *mut Flow,
+    _flags: u8,
+    _state: *mut c_void,
+    tx: *mut c_void,
+    _sig: *const Signature,
+    ctx: *const SigMatchCtx,
 ) -> c_int {
     let tx = cast_pointer!(tx, Iec104Transaction);
     let ctx = cast_pointer!(ctx, DetectUintData<u8>);
@@ -128,14 +153,21 @@ unsafe extern "C" fn iec104_type_id_match(
 // --- cot keyword (u8) ---
 
 unsafe extern "C" fn iec104_cot_setup(
-    de: *mut DetectEngineCtx, s: *mut Signature, raw: *const libc::c_char,
+    de: *mut DetectEngineCtx,
+    s: *mut Signature,
+    raw: *const libc::c_char,
 ) -> c_int {
     setup_u8(de, s, raw, G_IEC104_COT_KW_ID)
 }
 
 unsafe extern "C" fn iec104_cot_match(
-    _de: *mut DetectEngineThreadCtx, _f: *mut Flow, _flags: u8, _state: *mut c_void,
-    tx: *mut c_void, _sig: *const Signature, ctx: *const SigMatchCtx,
+    _de: *mut DetectEngineThreadCtx,
+    _f: *mut Flow,
+    _flags: u8,
+    _state: *mut c_void,
+    tx: *mut c_void,
+    _sig: *const Signature,
+    ctx: *const SigMatchCtx,
 ) -> c_int {
     let tx = cast_pointer!(tx, Iec104Transaction);
     let ctx = cast_pointer!(ctx, DetectUintData<u8>);
@@ -148,14 +180,21 @@ unsafe extern "C" fn iec104_cot_match(
 // --- common_address keyword (u16) ---
 
 unsafe extern "C" fn iec104_common_address_setup(
-    de: *mut DetectEngineCtx, s: *mut Signature, raw: *const libc::c_char,
+    de: *mut DetectEngineCtx,
+    s: *mut Signature,
+    raw: *const libc::c_char,
 ) -> c_int {
     setup_u16(de, s, raw, G_IEC104_COMMON_ADDRESS_KW_ID)
 }
 
 unsafe extern "C" fn iec104_common_address_match(
-    _de: *mut DetectEngineThreadCtx, _f: *mut Flow, _flags: u8, _state: *mut c_void,
-    tx: *mut c_void, _sig: *const Signature, ctx: *const SigMatchCtx,
+    _de: *mut DetectEngineThreadCtx,
+    _f: *mut Flow,
+    _flags: u8,
+    _state: *mut c_void,
+    tx: *mut c_void,
+    _sig: *const Signature,
+    ctx: *const SigMatchCtx,
 ) -> c_int {
     let tx = cast_pointer!(tx, Iec104Transaction);
     let ctx = cast_pointer!(ctx, DetectUintData<u16>);
@@ -168,14 +207,21 @@ unsafe extern "C" fn iec104_common_address_match(
 // --- ioa keyword (u32, matches any information object in the ASDU) ---
 
 unsafe extern "C" fn iec104_ioa_setup(
-    de: *mut DetectEngineCtx, s: *mut Signature, raw: *const libc::c_char,
+    de: *mut DetectEngineCtx,
+    s: *mut Signature,
+    raw: *const libc::c_char,
 ) -> c_int {
     setup_u32(de, s, raw, G_IEC104_IOA_KW_ID)
 }
 
 unsafe extern "C" fn iec104_ioa_match(
-    _de: *mut DetectEngineThreadCtx, _f: *mut Flow, _flags: u8, _state: *mut c_void,
-    tx: *mut c_void, _sig: *const Signature, ctx: *const SigMatchCtx,
+    _de: *mut DetectEngineThreadCtx,
+    _f: *mut Flow,
+    _flags: u8,
+    _state: *mut c_void,
+    tx: *mut c_void,
+    _sig: *const Signature,
+    ctx: *const SigMatchCtx,
 ) -> c_int {
     let tx = cast_pointer!(tx, Iec104Transaction);
     let ctx = cast_pointer!(ctx, DetectUintData<u32>);
@@ -192,14 +238,21 @@ unsafe extern "C" fn iec104_ioa_match(
 // --- u_function keyword (u8, U-format frames only) ---
 
 unsafe extern "C" fn iec104_u_function_setup(
-    de: *mut DetectEngineCtx, s: *mut Signature, raw: *const libc::c_char,
+    de: *mut DetectEngineCtx,
+    s: *mut Signature,
+    raw: *const libc::c_char,
 ) -> c_int {
     setup_u8(de, s, raw, G_IEC104_U_FUNCTION_KW_ID)
 }
 
 unsafe extern "C" fn iec104_u_function_match(
-    _de: *mut DetectEngineThreadCtx, _f: *mut Flow, _flags: u8, _state: *mut c_void,
-    tx: *mut c_void, _sig: *const Signature, ctx: *const SigMatchCtx,
+    _de: *mut DetectEngineThreadCtx,
+    _f: *mut Flow,
+    _flags: u8,
+    _state: *mut c_void,
+    tx: *mut c_void,
+    _sig: *const Signature,
+    ctx: *const SigMatchCtx,
 ) -> c_int {
     let tx = cast_pointer!(tx, Iec104Transaction);
     let ctx = cast_pointer!(ctx, DetectUintData<u8>);
@@ -212,7 +265,9 @@ unsafe extern "C" fn iec104_u_function_match(
 // --- dangerous keyword ---
 
 unsafe extern "C" fn iec104_dangerous_setup(
-    de: *mut DetectEngineCtx, s: *mut Signature, _raw: *const libc::c_char,
+    de: *mut DetectEngineCtx,
+    s: *mut Signature,
+    _raw: *const libc::c_char,
 ) -> c_int {
     if SCDetectSignatureSetAppProto(s, ALPROTO_IEC104) != 0 {
         return -1;
@@ -224,8 +279,13 @@ unsafe extern "C" fn iec104_dangerous_setup(
 }
 
 unsafe extern "C" fn iec104_dangerous_match(
-    _de: *mut DetectEngineThreadCtx, _f: *mut Flow, _flags: u8, _state: *mut c_void,
-    tx: *mut c_void, _sig: *const Signature, _ctx: *const SigMatchCtx,
+    _de: *mut DetectEngineThreadCtx,
+    _f: *mut Flow,
+    _flags: u8,
+    _state: *mut c_void,
+    tx: *mut c_void,
+    _sig: *const Signature,
+    _ctx: *const SigMatchCtx,
 ) -> c_int {
     let tx = cast_pointer!(tx, Iec104Transaction);
     if tx.is_dangerous {
@@ -238,7 +298,9 @@ unsafe extern "C" fn iec104_dangerous_match(
 // --- data sticky buffer ---
 
 unsafe extern "C" fn iec104_data_setup(
-    de: *mut DetectEngineCtx, s: *mut Signature, _raw: *const libc::c_char,
+    de: *mut DetectEngineCtx,
+    s: *mut Signature,
+    _raw: *const libc::c_char,
 ) -> c_int {
     if SCDetectSignatureSetAppProto(s, ALPROTO_IEC104) != 0 {
         return -1;
@@ -250,7 +312,10 @@ unsafe extern "C" fn iec104_data_setup(
 }
 
 unsafe extern "C" fn iec104_data_get(
-    tx: *const c_void, flags: u8, buf: *mut *const u8, len: *mut u32,
+    tx: *const c_void,
+    flags: u8,
+    buf: *mut *const u8,
+    len: *mut u32,
 ) -> bool {
     let tx = cast_pointer!(tx, Iec104Transaction);
     let to_client = flags & Direction::ToClient as u8 != 0;

@@ -235,7 +235,11 @@ impl S7commState {
     }
 
     fn free_tx(&mut self, tx_id: u64) {
-        if let Some(index) = self.transactions.iter().position(|tx| tx.tx_id == tx_id + 1) {
+        if let Some(index) = self
+            .transactions
+            .iter()
+            .position(|tx| tx.tx_id == tx_id + 1)
+        {
             self.transactions.remove(index);
         }
     }
@@ -395,8 +399,7 @@ impl S7commState {
             if let Some(ref sp) = pdu.s7_plus {
                 tx.s7plus_version = sp.version;
                 tx.s7plus_opcode = sp.opcode;
-                tx.s7plus_opcode_name =
-                    S7PlusOpcode::from_u8(sp.opcode).map(|o| o.as_str());
+                tx.s7plus_opcode_name = S7PlusOpcode::from_u8(sp.opcode).map(|o| o.as_str());
                 tx.s7plus_has_function = sp.has_function;
                 if sp.has_function {
                     tx.s7plus_function = sp.function;
@@ -557,7 +560,11 @@ impl S7commState {
 // C FFI exports
 
 unsafe extern "C" fn s7comm_probing_parser(
-    _flow: *const Flow, _direction: u8, input: *const u8, input_len: u32, _rdir: *mut u8,
+    _flow: *const Flow,
+    _direction: u8,
+    input: *const u8,
+    input_len: u32,
+    _rdir: *mut u8,
 ) -> AppProto {
     if input.is_null() || input_len == 0 {
         return ALPROTO_UNKNOWN;
@@ -585,8 +592,11 @@ unsafe extern "C" fn s7comm_state_tx_free(state: *mut c_void, tx_id: u64) {
 }
 
 unsafe extern "C" fn s7comm_parse_request(
-    flow: *mut Flow, state: *mut c_void, pstate: *mut AppLayerParserState,
-    stream_slice: StreamSlice, _data: *const c_void,
+    flow: *mut Flow,
+    state: *mut c_void,
+    pstate: *mut AppLayerParserState,
+    stream_slice: StreamSlice,
+    _data: *const c_void,
 ) -> AppLayerResult {
     let eof = SCAppLayerParserStateIssetFlag(pstate, APP_LAYER_PARSER_EOF_TS) > 0;
     if eof {
@@ -601,8 +611,11 @@ unsafe extern "C" fn s7comm_parse_request(
 }
 
 unsafe extern "C" fn s7comm_parse_response(
-    flow: *mut Flow, state: *mut c_void, pstate: *mut AppLayerParserState,
-    stream_slice: StreamSlice, _data: *const c_void,
+    flow: *mut Flow,
+    state: *mut c_void,
+    pstate: *mut AppLayerParserState,
+    stream_slice: StreamSlice,
+    _data: *const c_void,
 ) -> AppLayerResult {
     let _eof = SCAppLayerParserStateIssetFlag(pstate, APP_LAYER_PARSER_EOF_TC) > 0;
     let state = cast_pointer!(state, S7commState);

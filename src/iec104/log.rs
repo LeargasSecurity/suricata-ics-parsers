@@ -11,7 +11,14 @@ use suricata_sys::jsonbuilder::SCJsonBuilder;
 
 fn log_iec104(tx: &Iec104Transaction, js: &mut SCJsonBuilderWrapper) -> Result<(), ()> {
     js.open_object("iec104")?;
-    js.set_string("direction", if tx.to_server { "to_server" } else { "to_client" })?;
+    js.set_string(
+        "direction",
+        if tx.to_server {
+            "to_server"
+        } else {
+            "to_client"
+        },
+    )?;
 
     js.open_object("apci")?;
     js.set_uint("length", tx.length as u64)?;
@@ -70,7 +77,9 @@ fn log_iec104(tx: &Iec104Transaction, js: &mut SCJsonBuilderWrapper) -> Result<(
                         js.set_float("value", v as f64)?;
                     }
                 }
-                CommandValue::Bitstring(v) => js.set_string("bitstring", &format!("0x{:08x}", v))?,
+                CommandValue::Bitstring(v) => {
+                    js.set_string("bitstring", &format!("0x{:08x}", v))?
+                }
             }
             js.close()?;
         }
@@ -87,7 +96,8 @@ fn log_iec104(tx: &Iec104Transaction, js: &mut SCJsonBuilderWrapper) -> Result<(
 }
 
 pub(crate) unsafe extern "C" fn iec104_logger_log(
-    tx: *const std::os::raw::c_void, js: *mut std::os::raw::c_void,
+    tx: *const std::os::raw::c_void,
+    js: *mut std::os::raw::c_void,
 ) -> bool {
     let tx = cast_pointer!(tx, Iec104Transaction);
     let js = cast_pointer!(js, SCJsonBuilder);

@@ -139,7 +139,13 @@ fn parse_s7comm_header(input: &[u8]) -> IResult<&[u8], S7commHeader> {
 /// Parse S7comm parameter (function code + raw data)
 fn parse_s7comm_parameter(input: &[u8], length: u16) -> IResult<&[u8], S7commParameter> {
     if length == 0 {
-        return Ok((input, S7commParameter { function_code: 0, data: vec![] }));
+        return Ok((
+            input,
+            S7commParameter {
+                function_code: 0,
+                data: vec![],
+            },
+        ));
     }
     let (input, function_code) = be_u8(input)?;
     let remaining = (length as usize).saturating_sub(1);
@@ -190,8 +196,7 @@ fn parse_data_items(data: &[u8]) -> (u8, Option<S7DataItem>) {
             let length = u16::from_be_bytes([item[4], item[5]]);
             let db_number = u16::from_be_bytes([item[6], item[7]]);
             let area = item[8];
-            let addr_raw =
-                ((item[9] as u32) << 16) | ((item[10] as u32) << 8) | (item[11] as u32);
+            let addr_raw = ((item[9] as u32) << 16) | ((item[10] as u32) << 8) | (item[11] as u32);
             let byte_address = addr_raw >> 3;
             let bit_address = (addr_raw & 0x07) as u8;
             if first.is_none() {
@@ -337,8 +342,7 @@ pub(crate) fn parse_s7comm_pdu(input: &[u8]) -> IResult<&[u8], S7commPdu> {
     } else if s7_header.parameter_length > 0 {
         let (input, param) = parse_s7comm_parameter(input, s7_header.parameter_length)?;
         // Extract data items for Read/Write Var requests (Job)
-        if s7_header.rosctr == 0x01
-            && (param.function_code == 0x04 || param.function_code == 0x05)
+        if s7_header.rosctr == 0x01 && (param.function_code == 0x04 || param.function_code == 0x05)
         {
             let (count, first) = parse_data_items(&param.data);
             item_count = count;
@@ -405,7 +409,8 @@ mod tests {
         let data: &[u8] = &[
             0x03, 0x00, 0x00, 0x1f, // TPKT len 31
             0x02, 0xF0, 0x80, // COTP DT
-            0x32, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x0e, 0x00, 0x00, // S7 Job, param_len 14
+            0x32, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x0e, 0x00,
+            0x00, // S7 Job, param_len 14
             0x04, 0x01, // function Read Var, item count 1
             0x12, 0x0a, 0x10, 0x02, 0x00, 0x40, 0x00, 0x01, 0x84, 0x00, 0x00, 0x00, // item
         ];
@@ -426,8 +431,10 @@ mod tests {
             0x02, 0xF0, 0x80, // COTP DT
             0x32, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x1a, 0x00, 0x00, // param_len 26
             0x05, 0x02, // Write Var, item count 2
-            0x12, 0x0a, 0x10, 0x02, 0x00, 0x04, 0x00, 0x00, 0x83, 0x00, 0x00, 0x00, // item 1 (M)
-            0x12, 0x0a, 0x10, 0x02, 0x00, 0x02, 0x00, 0x01, 0x84, 0x00, 0x00, 0x08, // item 2 (DB1)
+            0x12, 0x0a, 0x10, 0x02, 0x00, 0x04, 0x00, 0x00, 0x83, 0x00, 0x00,
+            0x00, // item 1 (M)
+            0x12, 0x0a, 0x10, 0x02, 0x00, 0x02, 0x00, 0x01, 0x84, 0x00, 0x00,
+            0x08, // item 2 (DB1)
         ];
         let (_, pdu) = parse_s7comm_pdu(data).unwrap();
         assert_eq!(pdu.item_count, 2);
@@ -476,7 +483,9 @@ mod tests {
     #[test]
     fn test_non_s7_dt_payload_ignored() {
         // COTP DT carrying an ISO session CONNECT SPDU (MMS), not S7
-        let data: &[u8] = &[0x03, 0x00, 0x00, 0x0c, 0x02, 0xF0, 0x80, 0x0d, 0xb2, 0x05, 0x06, 0x13];
+        let data: &[u8] = &[
+            0x03, 0x00, 0x00, 0x0c, 0x02, 0xF0, 0x80, 0x0d, 0xb2, 0x05, 0x06, 0x13,
+        ];
         let (_, pdu) = parse_s7comm_pdu(data).unwrap();
         assert_eq!(pdu.cotp_type, COTP_DT);
         assert!(pdu.s7_header.is_none());
@@ -516,4 +525,3 @@ mod tests {
         assert_eq!(parse_data_items(&[0x00]).0, 0);
     }
 }
-

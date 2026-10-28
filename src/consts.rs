@@ -16,17 +16,17 @@ pub enum S7Area {
     SystemFlags = 0x05,  // System flags of 200 family
     AnalogInputs = 0x06, // Analog inputs of 200 family
     AnalogOutputs = 0x07,
-    Counter = 0x1C,   // S7 counters
-    Timer = 0x1D,     // S7 timers
+    Counter = 0x1C, // S7 counters
+    Timer = 0x1D,   // S7 timers
     Counter200 = 0x1E,
     Timer200 = 0x1F,
-    DataRecord = 0x21, // Direct peripheral access / data blocks (P)
-    Inputs = 0x81,     // I - process inputs
-    Outputs = 0x82,    // Q - process outputs
-    Flags = 0x83,      // M - memory / merkers
-    DataBlock = 0x84,  // DB - data blocks
+    DataRecord = 0x21,    // Direct peripheral access / data blocks (P)
+    Inputs = 0x81,        // I - process inputs
+    Outputs = 0x82,       // Q - process outputs
+    Flags = 0x83,         // M - memory / merkers
+    DataBlock = 0x84,     // DB - data blocks
     DataBlockInst = 0x85, // DI - instance data blocks
-    LocalData = 0x86,  // L - local data
+    LocalData = 0x86,     // L - local data
     PrevLocalData = 0x87,
 }
 
@@ -85,9 +85,9 @@ pub enum S7UserdataGroup {
     BlockFunctions = 0x03,
     CpuFunctions = 0x04,
     Security = 0x05,
-    Pbc = 0x06,       // Programmable Block Communication (BSEND/BRECV)
+    Pbc = 0x06, // Programmable Block Communication (BSEND/BRECV)
     TimeFunctions = 0x07,
-    Ncprg = 0x0F,     // NC programming
+    Ncprg = 0x0F, // NC programming
 }
 
 impl S7UserdataGroup {
@@ -288,7 +288,10 @@ mod tests {
         assert_eq!(S7Function::from_u8(0xAB), None);
         assert!(S7Function::PlcStop.is_dangerous());
         assert!(!S7Function::ReadVar.is_dangerous());
-        assert_eq!(S7Function::WriteVar.attack_technique(), "T0836 Modify Parameter");
+        assert_eq!(
+            S7Function::WriteVar.attack_technique(),
+            "T0836 Modify Parameter"
+        );
     }
 
     #[test]
