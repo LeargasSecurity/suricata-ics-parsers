@@ -1,6 +1,6 @@
 requires:
   min-version: 8.0.0
-  # Absolute path to libsuricata_s7comm.so. The test is skipped when unset.
+  # Absolute path to libsuricata_ics.so. The test is skipped when unset.
   env:
     - SURICATA_ICS_PLUGIN
 

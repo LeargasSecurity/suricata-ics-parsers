@@ -1,5 +1,5 @@
 [package]
-name = "suricata-s7comm"
+name = "suricata-ics-parsers"
 version = "0.1.0"
 edition = "2021"
 authors = ["Leargas Security"]
@@ -7,7 +7,7 @@ description = "Suricata S7comm/S7comm-plus, IEC 60870-5-104 and MMS/IEC 61850/IC
 license = "GPL-2.0"
 
 [lib]
-name = "suricata_s7comm"
+name = "suricata_ics"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]

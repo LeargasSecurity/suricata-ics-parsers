@@ -19,7 +19,7 @@
 #   REPROCESS    1 = reprocess every pcap each pass (replay mode).
 #                0 = skip pcaps already processed at this size/mtime (default).
 #   SURICATA     path to the suricata binary (default: suricata on PATH)
-#   PLUGIN       path to libsuricata_s7comm.so (default: auto-detect)
+#   PLUGIN       path to libsuricata_ics.so (default: auto-detect)
 
 set -uo pipefail
 
@@ -33,12 +33,19 @@ REPROCESS="${REPROCESS:-0}"
 # --- locate the plugin: prefer a freshly built one, fall back to installed ---
 if [[ -n "${PLUGIN:-}" && -f "${PLUGIN:-}" ]]; then
     :
-elif [[ -f "$REPO_DIR/target/release/libsuricata_s7comm.so" ]]; then
-    PLUGIN="$REPO_DIR/target/release/libsuricata_s7comm.so"
-elif [[ -f /usr/local/lib/suricata/plugins/libsuricata_s7comm.so ]]; then
-    PLUGIN="/usr/local/lib/suricata/plugins/libsuricata_s7comm.so"
 else
-    echo "ERROR: could not find libsuricata_s7comm.so (build it or set \$PLUGIN)" >&2
+    # Fresh build first, then installed; libsuricata_s7comm.so is the pre-rename name.
+    for candidate in "$REPO_DIR/target/release/libsuricata_ics.so" \
+                     /usr/local/lib/suricata/plugins/libsuricata_ics.so \
+                     /usr/local/lib/suricata/plugins/libsuricata_s7comm.so; do
+        if [[ -f "$candidate" ]]; then
+            PLUGIN="$candidate"
+            break
+        fi
+    done
+fi
+if [[ -z "${PLUGIN:-}" || ! -f "${PLUGIN:-}" ]]; then
+    echo "ERROR: could not find libsuricata_ics.so (build it or set \$PLUGIN)" >&2
     exit 1
 fi
 

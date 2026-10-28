@@ -69,8 +69,8 @@ jobs:
       - name: Upload plugin artifact
         uses: actions/upload-artifact@v4
         with:
-          name: libsuricata_s7comm.so
-          path: target/release/libsuricata_s7comm.so
+          name: libsuricata_ics.so
+          path: target/release/libsuricata_ics.so
           if-no-files-found: error
 
       - name: suricata-verify tests
@@ -79,7 +79,7 @@ jobs:
           git clone --depth 1 https://github.com/OISF/suricata-verify.git
           # run.py uses ./src/suricata from the current directory. Plugin EVE
           # types are not in Suricata's schema, so skip schema validation.
-          export SURICATA_ICS_PLUGIN="$PWD/target/release/libsuricata_s7comm.so"
+          export SURICATA_ICS_PLUGIN="$PWD/target/release/libsuricata_ics.so"
           VERIFY="$PWD/suricata-verify/run.py"
           TESTS="$PWD/tests"
           cd "suricata-${SURICATA_VERSION}"
