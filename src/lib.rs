@@ -1,4 +1,4 @@
-// Suricata S7comm ICS Protocol Parser Plugin
+// Suricata ICS protocol parsers plugin (S7comm, IEC 60870-5-104, MMS)
 // Copyright (C) 2026 Leargas Security
 // License: GPL-2.0
 

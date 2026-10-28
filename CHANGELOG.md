@@ -59,6 +59,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   issue templates, and a pull-request template.
 
 ### Changed
+- **Renamed the plugin library** from `libsuricata_s7comm.so` to
+  `libsuricata_ics.so` (crate `suricata-ics-parsers`, plugin name
+  `ics-parsers`), since it now carries S7comm, IEC 60870-5-104 and MMS.
+  Update `plugins:` paths in `suricata.yaml`; `make install` also creates a
+  `libsuricata_s7comm.so` compatibility symlink. App-layer protocol names,
+  keywords, EVE types and rules are unchanged.
 - TCP/102 flows whose first COTP DT carries an ISO 8327 session SPDU are now
   claimed by the `mms` parser (`app_proto: mms`) instead of ending as
   `failed`. The `iso102-not-s7comm` test expects this.

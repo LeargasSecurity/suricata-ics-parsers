@@ -1,4 +1,4 @@
-# Suricata S7comm plugin — build & packaging helper
+# Suricata ICS parsers plugin (S7comm, IEC-104, MMS) — build & packaging helper
 #
 # The plugin links against the Suricata Rust crates that ship with the matching
 # Suricata source tree. Point SURICATA_SRC at that tree (the directory that
@@ -17,7 +17,7 @@ SURICATA_SRC ?= $(HOME)/suricata-8.0.6
 # Derived path to the Rust crates inside the Suricata source tree.
 SURICATA_RUST := $(abspath $(SURICATA_SRC)/rust)
 
-PLUGIN_SO   := target/release/libsuricata_s7comm.so
+PLUGIN_SO   := target/release/libsuricata_ics.so
 PLUGIN_DIR  ?= /usr/local/lib/suricata/plugins
 RULES_DIR   ?= /usr/local/var/lib/suricata/rules
 
@@ -47,6 +47,8 @@ test: configure
 install: build
 	install -d "$(PLUGIN_DIR)"
 	install -m 0644 "$(PLUGIN_SO)" "$(PLUGIN_DIR)/"
+	# Pre-rename name, so existing suricata.yaml plugin paths keep working.
+	ln -sf libsuricata_ics.so "$(PLUGIN_DIR)/libsuricata_s7comm.so"
 	install -d "$(RULES_DIR)"
 	install -m 0644 rules/s7comm.rules rules/iec104.rules rules/mms.rules "$(RULES_DIR)/"
 	@echo "Installed plugin to $(PLUGIN_DIR) and rules to $(RULES_DIR)"

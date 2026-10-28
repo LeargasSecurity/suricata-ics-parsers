@@ -1,6 +1,6 @@
 requires:
   min-version: 8.0.0
-  # Absolute path to libsuricata_s7comm.so (it also provides the mms parser).
+  # Absolute path to libsuricata_ics.so (it provides the s7comm, iec104 and mms parsers).
   # The test is skipped when this is not set.
   env:
     - SURICATA_ICS_PLUGIN

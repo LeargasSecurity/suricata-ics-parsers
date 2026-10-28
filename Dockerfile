@@ -1,9 +1,9 @@
 # Multi-stage build: compiles Suricata 8.0.x and the S7comm plugin, then ships a
 # slim runtime image with Suricata + the plugin + rules preinstalled.
 #
-#   docker build -t suricata-s7comm .
-#   docker run --rm -v "$PWD:/data" suricata-s7comm -r /data/capture.pcap -l /data/out -k none
-#   docker run --rm --net=host suricata-s7comm -i eth0 -k none
+#   docker build -t suricata-ics .
+#   docker run --rm -v "$PWD:/data" suricata-ics -r /data/capture.pcap -l /data/out -k none
+#   docker run --rm --net=host suricata-ics -i eth0 -k none
 
 ARG SURICATA_VERSION=8.0.6
 
@@ -40,9 +40,9 @@ RUN make build SURICATA_SRC="/src/suricata-${SURICATA_VERSION}" \
         PLUGIN_DIR=/usr/local/lib/suricata/plugins \
         RULES_DIR=/usr/local/var/lib/suricata/rules
 
-# Enable the plugin, the s7comm app-layer, and eve s7comm logging in the config.
+# Enable the plugin and its rules in the config.
 RUN CONF=/usr/local/etc/suricata/suricata.yaml \
-    && printf '\n# --- S7comm plugin (added at image build) ---\nplugins:\n  - /usr/local/lib/suricata/plugins/libsuricata_s7comm.so\n' >> "$CONF" \
+    && printf '\n# --- ICS parsers plugin (added at image build) ---\nplugins:\n  - /usr/local/lib/suricata/plugins/libsuricata_ics.so\n' >> "$CONF" \
     && sed -i 's#^rule-files:#rule-files:\n  - s7comm.rules\n  - iec104.rules\n  - mms.rules#' "$CONF" || true
 
 # ---------------------------------------------------------------------------

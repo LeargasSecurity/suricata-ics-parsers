@@ -1,4 +1,4 @@
-// S7comm Suricata plugin registration
+// Suricata ICS protocol parsers plugin registration
 // Copyright (C) 2026 Leargas Security
 // License: GPL-2.0
 
@@ -18,9 +18,9 @@ use suricata_sys::sys::{
     SC_PACKAGE_VERSION,
 };
 
-extern "C" fn s7comm_plugin_init() {
+extern "C" fn ics_plugin_init() {
     suricata::plugin::init();
-    SCLogNotice!("Initializing S7comm ICS protocol parser plugin");
+    SCLogNotice!("Initializing S7comm ICS protocol parser");
     let plugin = SCAppLayerPlugin {
         name: b"s7comm\0".as_ptr() as *const libc::c_char,
         logname: b"JsonS7commLog\0".as_ptr() as *const libc::c_char,
@@ -76,11 +76,11 @@ extern "C" fn SCPluginRegister() -> *const SCPlugin {
     let plugin = SCPlugin {
         version: SC_API_VERSION,
         suricata_version: SC_PACKAGE_VERSION.as_ptr() as *const libc::c_char,
-        name: b"s7comm\0".as_ptr() as *const libc::c_char,
+        name: b"ics-parsers\0".as_ptr() as *const libc::c_char,
         plugin_version,
         license: b"GPL-2.0\0".as_ptr() as *const libc::c_char,
         author: b"Leargas Security\0".as_ptr() as *const libc::c_char,
-        Init: Some(s7comm_plugin_init),
+        Init: Some(ics_plugin_init),
     };
     Box::into_raw(Box::new(plugin))
 }

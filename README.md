@@ -1,10 +1,11 @@
-# Suricata S7comm ICS Protocol Parser
+# Suricata ICS Protocol Parsers
 
 [![License: GPL v2](https://img.shields.io/badge/License-GPLv2-blue.svg)](LICENSE)
 
-A [Suricata 8.0](https://suricata.io/) application-layer parser **plugin** for the
-Siemens **S7comm** and **S7comm-plus** protocols, purpose-built for
-Industrial Control System (ICS/OT) network monitoring.
+A [Suricata 8.0](https://suricata.io/) application-layer parser **plugin**
+(`libsuricata_ics.so`) for Industrial Control System (ICS/OT) network
+monitoring, starting with the Siemens **S7comm** and **S7comm-plus**
+protocols.
 
 Unlike signature-only approaches that match fixed byte offsets, this is a true
 stateful protocol parser written in Rust. It performs full TPKT/COTP/S7comm
@@ -67,7 +68,7 @@ contains `rust/`) and build with `make` — `Cargo.toml` is generated from
 make build SURICATA_SRC=/opt/suricata-8.0.6
 ```
 
-The plugin is produced at `target/release/libsuricata_s7comm.so`.
+The plugin is produced at `target/release/libsuricata_ics.so`.
 
 Useful targets:
 
@@ -91,13 +92,13 @@ make clean
 Build a self-contained image with Suricata + the plugin preinstalled:
 
 ```bash
-docker build -t suricata-s7comm .
+docker build -t suricata-ics .
 
 # Offline: analyze a pcap
-docker run --rm -v "$PWD:/data" suricata-s7comm -r /data/capture.pcap -l /data/out -k none
+docker run --rm -v "$PWD:/data" suricata-ics -r /data/capture.pcap -l /data/out -k none
 
 # Live: monitor a host interface
-docker run --rm --net=host suricata-s7comm -i eth0 -k none
+docker run --rm --net=host suricata-ics -i eth0 -k none
 ```
 
 ---
@@ -110,15 +111,21 @@ sudo make install SURICATA_SRC=/opt/suricata-8.0.6
 
 # ...or manually:
 sudo mkdir -p /usr/local/lib/suricata/plugins
-sudo cp target/release/libsuricata_s7comm.so /usr/local/lib/suricata/plugins/
+sudo cp target/release/libsuricata_ics.so /usr/local/lib/suricata/plugins/
 sudo cp rules/s7comm.rules rules/iec104.rules rules/mms.rules /usr/local/var/lib/suricata/rules/
 ```
+
+> **Upgrading from `libsuricata_s7comm.so`:** the library was renamed to
+> `libsuricata_ics.so` when it grew beyond S7comm. `make install` also creates
+> a `libsuricata_s7comm.so` symlink, so existing `plugins:` entries keep
+> working; point them at `libsuricata_ics.so` when convenient. Protocol names
+> (`s7comm`, `iec104`, `mms`), keywords, EVE types and rules are unchanged.
 
 Enable the plugin and protocol in `suricata.yaml`:
 
 ```yaml
 plugins:
-  - /usr/local/lib/suricata/plugins/libsuricata_s7comm.so
+  - /usr/local/lib/suricata/plugins/libsuricata_ics.so
 
 app-layer:
   protocols:
@@ -506,7 +513,7 @@ EVE types are not in Suricata's schema:
 
 ```bash
 cd /path/to/suricata-8.0.x
-SURICATA_ICS_PLUGIN=/path/to/suricata-ics-parsers/target/release/libsuricata_s7comm.so \
+SURICATA_ICS_PLUGIN=/path/to/suricata-ics-parsers/target/release/libsuricata_ics.so \
   ../suricata-verify/run.py --no-validation \
   --testdir=/path/to/suricata-ics-parsers/tests          # or a name/prefix, e.g. iec104
 ```
@@ -551,7 +558,7 @@ Environment variables:
 | `INTERVAL` | `0` | Seconds between passes; `0` = run once, `>0` = loop |
 | `REPROCESS` | `0` | `1` = reprocess every pcap each pass; `0` = skip already-processed (by size/mtime) |
 | `SURICATA` | `suricata` | Path to the Suricata binary |
-| `PLUGIN` | auto | Path to `libsuricata_s7comm.so` |
+| `PLUGIN` | auto | Path to `libsuricata_ics.so` |
 
 In watcher mode a `.processed` state file records handled pcaps (keyed on
 name + size + mtime) so only new or modified captures are re-run. `Ctrl-C`

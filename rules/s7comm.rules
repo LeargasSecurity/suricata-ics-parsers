@@ -2,7 +2,7 @@
 # Copyright (C) 2026 Leargas Security
 # License: GPL-2.0
 #
-# These rules require the suricata-s7comm app-layer parser plugin.
+# These rules require the s7comm app-layer parser from the suricata-ics-parsers plugin.
 # Keywords: s7comm.function_code, s7comm.rosctr, s7comm.dangerous,
 #           s7comm.userdata_group, s7comm.subfunction, s7comm.plus
 

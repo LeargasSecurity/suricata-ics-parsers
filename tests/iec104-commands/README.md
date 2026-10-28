@@ -23,6 +23,6 @@ Plugin EVE types are not in Suricata's schema, so pass `--no-validation`:
 
 ```bash
 cd /path/to/suricata-8.0.x
-SURICATA_ICS_PLUGIN=/path/to/libsuricata_s7comm.so \
+SURICATA_ICS_PLUGIN=/path/to/libsuricata_ics.so \
   ../suricata-verify/run.py --no-validation --testdir=/path/to/repo/tests iec104-commands
 ```
