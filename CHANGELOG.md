@@ -16,6 +16,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - suricata-verify pcap tests for IEC-104: `iec104-commands` (control commands
   against the shipped `iec104.rules`) and `iec104-sq` (SQ=1 ASDUs). They load
   the plugin from `SURICATA_ICS_PLUGIN` and run with `--no-validation`.
+- `scripts/gen-iec104-pcaps.py`: standard-library generator for synthetic
+  IEC 60870-5-104 pcaps covering every rule in `rules/iec104.rules`.
 - Suricata rules for the parser's anomaly/DoS app-layer events: malformed/
   oversized PDU, transaction flood (max-tx), and invalid protocol id
   (`rules/s7comm.rules`, SIDs 3700300-3700302; ATT&CK ICS T0814).
