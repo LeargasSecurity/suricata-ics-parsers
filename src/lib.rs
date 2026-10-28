@@ -3,6 +3,7 @@
 // License: GPL-2.0
 
 mod consts;
+mod cotp;
 mod detect;
 mod iec104;
 mod log;

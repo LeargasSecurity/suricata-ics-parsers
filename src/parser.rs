@@ -7,6 +7,7 @@ use nom7::number::complete::{be_u16, be_u8};
 use nom7::IResult;
 
 use crate::consts::*;
+use crate::cotp::*;
 
 /// S7comm Header
 #[derive(Debug, Clone)]
@@ -49,16 +50,6 @@ pub struct S7DataItem {
     /// Byte address (already shifted from bit address)
     pub byte_address: u32,
     pub bit_address: u8,
-}
-
-/// COTP connection info (from CR/CC parameters)
-#[derive(Debug, Clone, Default)]
-pub struct CotpConnectInfo {
-    pub src_tsap: Option<u16>,
-    pub dst_tsap: Option<u16>,
-    /// Derived from destination TSAP low byte
-    pub rack: Option<u8>,
-    pub slot: Option<u8>,
 }
 
 /// S7comm-plus (v3) info
@@ -111,41 +102,6 @@ impl Default for S7commPdu {
             s7_plus: None,
         }
     }
-}
-
-/// Parse COTP CR/CC parameters to extract TSAPs (rack/slot).
-/// `input` is the bytes after the COTP fixed header (dst_ref, src_ref, class).
-fn parse_cotp_params(mut input: &[u8]) -> CotpConnectInfo {
-    let mut info = CotpConnectInfo::default();
-    // Parameters are TLV: param_code(1), param_len(1), value(param_len)
-    while input.len() >= 2 {
-        let code = input[0];
-        let len = input[1] as usize;
-        if input.len() < 2 + len {
-            break;
-        }
-        let value = &input[2..2 + len];
-        match code {
-            COTP_PARAM_SRC_TSAP => {
-                if len == 2 {
-                    info.src_tsap = Some(u16::from_be_bytes([value[0], value[1]]));
-                }
-            }
-            COTP_PARAM_DST_TSAP => {
-                if len == 2 {
-                    let tsap = u16::from_be_bytes([value[0], value[1]]);
-                    info.dst_tsap = Some(tsap);
-                    // Low byte encodes rack (high 3 bits) and slot (low 5 bits)
-                    let low = (tsap & 0xff) as u8;
-                    info.rack = Some(low >> 5);
-                    info.slot = Some(low & 0x1f);
-                }
-            }
-            _ => {}
-        }
-        input = &input[2 + len..];
-    }
-    info
 }
 
 /// Parse S7comm header (10 or 12 bytes depending on ROSCTR)
@@ -314,80 +270,49 @@ fn parse_s7plus(input: &[u8]) -> Option<S7PlusInfo> {
 
 /// Parse a complete S7comm PDU (TPKT + COTP + S7comm)
 pub(crate) fn parse_s7comm_pdu(input: &[u8]) -> IResult<&[u8], S7commPdu> {
-    // Parse TPKT header
-    let (input, _version) = be_u8(input)?;
-    let (input, _reserved) = be_u8(input)?;
-    let (input, _tpkt_length) = be_u16(input)?;
+    let (rem, cotp) = parse_tpkt_cotp(input)?;
+    let cotp_type = cotp.pdu_type;
 
-    // Parse COTP
-    let (input, cotp_length) = be_u8(input)?;
-    let (input, cotp_type_raw) = be_u8(input)?;
-    let cotp_type = cotp_type_raw & 0xF0;
-
-    // For CR/CC, extract TSAP params. COTP CR/CC fixed part after type:
-    // dst_ref(2), src_ref(2), class(1) = 5 bytes, then variable params.
     if cotp_type == COTP_CR || cotp_type == COTP_CC {
-        let hdr_remaining = cotp_length.saturating_sub(1) as usize;
-        let (input, cotp_body) = take(hdr_remaining)(input)?;
-        let mut pdu = S7commPdu {
-            cotp_type,
-            ..Default::default()
-        };
-        // Skip dst_ref(2) + src_ref(2) + class(1) = 5 bytes to reach params
-        if cotp_body.len() > 5 {
-            pdu.cotp_connect = Some(parse_cotp_params(&cotp_body[5..]));
+        return Ok((
+            rem,
+            S7commPdu {
+                cotp_type,
+                cotp_connect: cotp.connect,
+                ..Default::default()
+            },
+        ));
+    }
+
+    let input = cotp.payload;
+    let payload_kind = if cotp_type == COTP_DT {
+        classify_payload(input)
+    } else {
+        Iso102Payload::Unknown
+    };
+
+    match payload_kind {
+        Iso102Payload::S7comm => {}
+        Iso102Payload::S7commPlus => {
+            return Ok((
+                rem,
+                S7commPdu {
+                    cotp_type,
+                    is_s7comm_plus: true,
+                    s7_plus: parse_s7plus(input),
+                    ..Default::default()
+                },
+            ));
         }
-        return Ok((input, pdu));
-    }
-
-    let cotp_remaining = cotp_length.saturating_sub(1);
-    let (input, _) = take(cotp_remaining as usize)(input)?;
-
-    // If not a DT PDU, return without S7 payload
-    if cotp_type != COTP_DT {
-        return Ok((
-            input,
-            S7commPdu {
-                cotp_type,
-                ..Default::default()
-            },
-        ));
-    }
-
-    if input.is_empty() {
-        return Ok((
-            input,
-            S7commPdu {
-                cotp_type,
-                ..Default::default()
-            },
-        ));
-    }
-
-    let protocol_id = input[0];
-    let is_s7comm_plus = protocol_id == S7COMM_PLUS_PROTOCOL_ID;
-
-    if protocol_id != S7COMM_PROTOCOL_ID && !is_s7comm_plus {
-        return Ok((
-            input,
-            S7commPdu {
-                cotp_type,
-                ..Default::default()
-            },
-        ));
-    }
-
-    if is_s7comm_plus {
-        let s7_plus = parse_s7plus(input);
-        return Ok((
-            &[],
-            S7commPdu {
-                cotp_type,
-                is_s7comm_plus: true,
-                s7_plus,
-                ..Default::default()
-            },
-        ));
+        _ => {
+            return Ok((
+                rem,
+                S7commPdu {
+                    cotp_type,
+                    ..Default::default()
+                },
+            ));
+        }
     }
 
     let (input, s7_header) = parse_s7comm_header(input)?;
@@ -449,59 +374,15 @@ pub(crate) fn parse_s7comm_pdu(input: &[u8]) -> IResult<&[u8], S7commPdu> {
             plc_control_service: plc_ctrl_service,
             userdata_return_code,
             invalid_rosctr,
-            is_s7comm_plus,
+            is_s7comm_plus: false,
             s7_plus: None,
         },
     ))
 }
 
-/// Probe function: check if traffic looks like S7comm (TPKT on port 102)
-pub(crate) fn probe_s7comm(input: &[u8]) -> bool {
-    if input.len() < 7 {
-        return false;
-    }
-    if input[0] != TPKT_VERSION {
-        return false;
-    }
-    let tpkt_len = u16::from_be_bytes([input[2], input[3]]);
-    if tpkt_len < 7 || tpkt_len as usize > input.len() + 100 {
-        return false;
-    }
-    let cotp_len = input[4] as usize;
-    let s7_offset = 5 + cotp_len;
-    if s7_offset < input.len() {
-        let proto = input[s7_offset];
-        return proto == S7COMM_PROTOCOL_ID || proto == S7COMM_PLUS_PROTOCOL_ID;
-    }
-    let cotp_type = input[5] & 0xF0;
-    cotp_type == COTP_CR || cotp_type == COTP_CC
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_probe_positive_job() {
-        // TPKT + COTP DT + S7 Job (PLC Stop)
-        let data: &[u8] = &[
-            0x03, 0x00, 0x00, 0x13, 0x02, 0xF0, 0x80, 0x32, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00,
-            0x02, 0x00, 0x00, 0x29, 0x00,
-        ];
-        assert!(probe_s7comm(data));
-    }
-
-    #[test]
-    fn test_probe_negative() {
-        // Not TPKT version 3
-        assert!(!probe_s7comm(&[0x04, 0x00, 0x00, 0x13, 0x02, 0xF0, 0x80]));
-        // Too short
-        assert!(!probe_s7comm(&[0x03, 0x00, 0x00]));
-        // Wrong protocol id after COTP
-        assert!(!probe_s7comm(&[
-            0x03, 0x00, 0x00, 0x13, 0x02, 0xF0, 0x80, 0x99, 0x01, 0x00
-        ]));
-    }
 
     #[test]
     fn test_parse_plc_stop() {
@@ -590,6 +471,16 @@ mod tests {
         assert!(sp.has_function);
         assert_eq!(sp.function, 0x04f2);
         assert_eq!(sp.sequence_number, 5);
+    }
+
+    #[test]
+    fn test_non_s7_dt_payload_ignored() {
+        // COTP DT carrying an ISO session CONNECT SPDU (MMS), not S7
+        let data: &[u8] = &[0x03, 0x00, 0x00, 0x0c, 0x02, 0xF0, 0x80, 0x0d, 0xb2, 0x05, 0x06, 0x13];
+        let (_, pdu) = parse_s7comm_pdu(data).unwrap();
+        assert_eq!(pdu.cotp_type, COTP_DT);
+        assert!(pdu.s7_header.is_none());
+        assert!(!pdu.is_s7comm_plus);
     }
 
     #[test]
