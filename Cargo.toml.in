@@ -23,3 +23,7 @@ suricata-sys = { path = "@SURICATA_RUST@/sys" }
 [features]
 default = ["suricata8"]
 suricata8 = []
+
+[lints.rust]
+# cargo-fuzz builds with --cfg fuzzing (see src/fuzz_api.rs).
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(fuzzing)"] }

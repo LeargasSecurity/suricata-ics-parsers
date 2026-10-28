@@ -1122,3 +1122,43 @@ mod tests {
         assert!(!c.dangerous && c.events.is_empty() && c.technique.is_none());
     }
 }
+
+/// Fuzzing harness: drive the state machine like `parse()` does, without FFI.
+/// Each frame is preceded by a control byte: bit 0 picks the direction,
+/// bit 7 injects a stream gap instead of a frame.
+#[cfg(fuzzing)]
+pub(crate) fn fuzz_feed(data: &[u8]) {
+    unsafe {
+        // Small limit so oversize handling is reachable.
+        MMS_MAX_MESSAGE_SIZE = 4096;
+    }
+    let mut s = MmsState::new();
+    let mut input = data;
+    while let Some((&ctl, rest)) = input.split_first() {
+        input = rest;
+        let to_server = ctl & 1 == 0;
+        if ctl & 0x80 != 0 {
+            s.on_gap(to_server);
+            continue;
+        }
+        match tpkt_frame(input, u16::MAX as usize) {
+            TpktFrame::Complete(len) => {
+                s.handle_frame(&input[..len], to_server);
+                input = &input[len..];
+            }
+            TpktFrame::Invalid => {
+                s.event_tx(to_server, MmsEvent::MalformedPdu);
+                break;
+            }
+            TpktFrame::Incomplete(_) => break,
+        }
+        for tx in s.transactions.iter() {
+            let _ = (tx.service(), tx.mms_request(), tx.mms_response());
+        }
+        if s.transactions.len() >= 64 {
+            s.close_pending(to_server);
+        }
+        // Suricata frees completed transactions after inspection/logging.
+        s.transactions.retain(|t| !t.complete);
+    }
+}

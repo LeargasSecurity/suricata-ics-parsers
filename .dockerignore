@@ -7,3 +7,7 @@ Cargo.toml
 *.md
 !README.md
 tests/*/README.md
+
+# Local captures and fuzzing artifacts are not needed in the image.
+pcap/
+fuzz/

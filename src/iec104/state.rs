@@ -594,3 +594,26 @@ mod tests {
         assert!(state.get_tx(0).is_none());
     }
 }
+
+/// Fuzzing harness: split the input into APDUs like `parse()` and feed them,
+/// alternating direction on the low bit of each APDU's length byte.
+#[cfg(fuzzing)]
+pub(crate) fn fuzz_feed(data: &[u8]) {
+    let mut s = Iec104State::new();
+    let mut start = data;
+    while start.len() >= 2 {
+        if start[0] != IEC104_START_BYTE {
+            break;
+        }
+        let len = start[1] as usize + 2;
+        if start.len() < len {
+            break;
+        }
+        let to_server = start[1] & 1 == 0;
+        s.handle_apdu(&start[..len], to_server);
+        start = &start[len..];
+        if s.transactions.len() > 256 {
+            s.transactions.clear();
+        }
+    }
+}

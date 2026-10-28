@@ -7,6 +7,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- cargo-fuzz targets (`fuzz/`) for every parser that handles untrusted
+  traffic: `cotp`, `mms_message`, `mms_state`, `s7comm` and `iec104`, with
+  entry points in `src/fuzz_api.rs` (built only with `--cfg fuzzing`) and
+  `fuzz/make-seeds.py` to seed them from the test captures. About 110 million
+  executions found no crashes. CI fuzzes each target for 60 seconds on
+  pushes to `main`, weekly and on demand.
+- Release workflow (`.github/workflows/release.yml`): pushing a `v*` tag
+  checks the tag against the crate version, builds on Ubuntu 22.04, runs the
+  unit and suricata-verify tests as a gate, and publishes a GitHub release
+  with the library, rules, docs and SHA-256 checksums, using the matching
+  CHANGELOG section as release notes.
+- CI job that builds the Docker image and smoke-tests it on S7comm,
+  IEC-104 and MMS captures.
 - MMS app-layer parser (`mms`, TCP/102) in the same plugin, for IEC 61850
   client/server traffic and ICCP / TASE.2: COTP DT reassembly, ISO 8327
   session, ISO 8823 presentation, ACSE and MMS decoding with `der-parser`
@@ -87,6 +100,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   was produced for these flows before either.
 
 ### Fixed
+- Docker image: enable the `s7comm`, `iec104` and `mms` EVE record types
+  (previously only alerts were logged), build with current stable Rust
+  instead of the distro `rustc`, fail the build unless the plugin loads and
+  logs MMS, and keep `pcap/` and `fuzz/` out of the build context.
+- CI suricata-verify tests are now blocking.
 - S7comm PDUs split across TCP segments no longer stop parsing for the flow.
   The parser reported the bytes still missing from `AppLayerResult::incomplete()`
   instead of the total PDU size, which Suricata treats as an internal error

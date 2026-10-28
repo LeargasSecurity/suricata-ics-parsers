@@ -718,3 +718,31 @@ pub(crate) unsafe extern "C" fn s7comm_register_parser() {
         SCLogNotice!("Protocol detector and parser disabled for s7comm.");
     }
 }
+
+/// Fuzzing harness: TPKT-frame the input like the parse loops and run each
+/// PDU through the request or response path (low bit of the TPKT reserved
+/// byte picks the direction).
+#[cfg(fuzzing)]
+pub(crate) fn fuzz_feed(data: &[u8]) {
+    let mut s = S7commState::new();
+    let mut start = data;
+    while !start.is_empty() {
+        let len = match tpkt_frame(start, unsafe { S7COMM_MAX_BUFFER }) {
+            TpktFrame::Complete(len) => len,
+            _ => break,
+        };
+        let pdu_data = &start[..len];
+        let to_server = start[1] & 1 == 0;
+        if let Ok((_, pdu)) = parse_s7comm_pdu(pdu_data) {
+            if to_server {
+                s.process_request_pdu(&pdu, pdu_data);
+            } else {
+                s.process_response_pdu(&pdu, pdu_data);
+            }
+        }
+        start = &start[len..];
+        if s.transactions.len() > 256 {
+            s.transactions.clear();
+        }
+    }
+}
