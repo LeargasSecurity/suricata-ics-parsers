@@ -1,0 +1,35 @@
+requires:
+  min-version: 8.0.0
+  # Absolute path to libsuricata_s7comm.so. The test is skipped when unset.
+  env:
+    - SURICATA_ICS_PLUGIN
+
+command: |
+  ${SRCDIR}/src/suricata --init-errors-fatal -k none \
+      --set plugins.0="${SURICATA_ICS_PLUGIN}" \
+      --set classification-file="${SRCDIR}/etc/classification.config" \
+      --set reference-config-file="${SRCDIR}/etc/reference.config" \
+      -c "${TEST_DIR}/suricata.yaml" -l "${OUTPUT_DIR}" \
+      -r "${TEST_DIR}/input.pcap" -S "${TEST_DIR}/test.rules"
+
+checks:
+  # COTP DT payloads carry an ISO 8327 session SPDU (as MMS/ICCP do), not S7.
+  # The shared TCP/102 probe must reject the flow rather than label it s7comm.
+  - filter:
+      count: 1
+      match:
+        event_type: flow
+        app_proto: failed
+  - filter:
+      count: 0
+      match:
+        event_type: flow
+        app_proto: s7comm
+  - filter:
+      count: 0
+      match:
+        event_type: s7comm
+  - filter:
+      count: 0
+      match:
+        event_type: alert

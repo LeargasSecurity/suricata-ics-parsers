@@ -1,0 +1,21 @@
+%YAML 1.1
+---
+# Self-contained config: the plugin is loaded on the command line via
+# --set plugins.0=$SURICATA_ICS_PLUGIN (see test.yaml).
+app-layer:
+  protocols:
+    s7comm:
+      enabled: yes
+      detection-ports:
+        dp: 102
+
+outputs:
+  - eve-log:
+      enabled: yes
+      filetype: regular
+      filename: eve.json
+      types:
+        - alert
+        - anomaly
+        - s7comm
+        - flow

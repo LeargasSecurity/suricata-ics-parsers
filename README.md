@@ -406,6 +406,8 @@ rules, and output assertions:
 | `s7comm-download` | Program-download detection, `s7comm.dangerous`, ATT&CK |
 | `s7comm-recon-szl` | Read SZL reconnaissance via userdata keywords |
 | `s7comm-auth-password` | Security/password access + `frame` keyword |
+| `s7comm-split-pdu` | S7 PDU split across TCP segments is reassembled (regression) |
+| `iso102-not-s7comm` | Non-S7 (ISO session/MMS) TCP/102 traffic is not labelled `s7comm` |
 | `iec104-commands` | IEC-104 STARTDT/GI/control commands vs. shipped `iec104.rules`, `iec104.dangerous`, EVE decoding |
 | `iec104-sq` | IEC-104 SQ=1 ASDUs, multiple APDUs per segment, no false positives |
 
