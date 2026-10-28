@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-28
+
 ### Added
 - cargo-fuzz targets (`fuzz/`) for every parser that handles untrusted
   traffic: `cotp`, `mms_message`, `mms_state`, `s7comm` and `iec104`, with
@@ -138,5 +140,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Rust unit tests and four suricata-verify tests (write-var, download, recon-szl,
   auth-password).
 
-[Unreleased]: https://github.com/LeargasSecurity/suricata-ics-parsers/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/LeargasSecurity/suricata-ics-parsers/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/LeargasSecurity/suricata-ics-parsers/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/LeargasSecurity/suricata-ics-parsers/releases/tag/v0.1.0
