@@ -31,7 +31,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Community health files: `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`,
   issue templates, and a pull-request template.
 
+### Changed
+- TPKT/COTP handling for TCP/102 moved into a shared `cotp` module
+  (`tpkt_frame()`, `parse_tpkt_cotp()`, `probe_iso102()`) so future ISO-stack
+  parsers (MMS, IEC 61850, ICCP) can reuse it. The S7comm parser and both
+  parsing directions now use it and reject non-TPKT data.
+- S7comm protocol detection now looks past the COTP connection request/confirm
+  to the first COTP DT payload and only claims the flow for S7comm (0x32) or
+  S7comm-Plus (0x72). Other TCP/102 traffic (MMS, IEC 61850, ICCP) now ends as
+  `app_proto: failed` instead of `s7comm`. Detection depth is now 512 bytes.
+  A TCP/102 flow that only exchanges the COTP handshake, such as a scanner
+  probing a PLC, is no longer labelled `s7comm`; no S7 transaction or alert
+  was produced for these flows before either.
+
 ### Fixed
+- S7comm PDUs split across TCP segments no longer stop parsing for the flow.
+  The parser reported the bytes still missing from `AppLayerResult::incomplete()`
+  instead of the total PDU size, which Suricata treats as an internal error
+  when more than about half the PDU had already arrived.
 - suricata-verify tests now actually run: `s7comm-*` tests no longer use the
   unsupported `requires: plugins` and `min:` keys, load the plugin from
   `SURICATA_ICS_PLUGIN`, and enable EVE output in their configs. The

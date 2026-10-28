@@ -3,6 +3,7 @@
 // License: GPL-2.0
 
 use crate::consts::*;
+use crate::cotp::*;
 use crate::parser::*;
 use std::collections::VecDeque;
 use std::ffi::CString;
@@ -14,7 +15,7 @@ use suricata::applayer::{
     APP_LAYER_PARSER_OPT_ACCEPT_GAPS,
 };
 use suricata::conf::conf_get;
-use suricata::core::{ALPROTO_UNKNOWN, IPPROTO_TCP};
+use suricata::core::{ALPROTO_FAILED, ALPROTO_UNKNOWN, IPPROTO_TCP};
 use suricata::frames::Frame;
 use suricata::{
     build_slice, cast_pointer, export_state_data_get, export_tx_data_get, SCLogError, SCLogNotice,
@@ -274,21 +275,14 @@ impl S7commState {
 
         let mut start = input;
         while !start.is_empty() {
-            // Need the 4-byte TPKT header to know the PDU length.
-            if start.len() < 4 {
-                let consumed = input.len() - start.len();
-                return AppLayerResult::incomplete(consumed as u32, (4 - start.len()) as u32);
-            }
-
-            let tpkt_len = u16::from_be_bytes([start[2], start[3]]) as usize;
-            if tpkt_len < 7 || tpkt_len > unsafe { S7COMM_MAX_BUFFER } {
-                return AppLayerResult::err();
-            }
-            if start.len() < tpkt_len {
-                // Ask Suricata to reassemble more of the stream for us.
-                let consumed = input.len() - start.len();
-                return AppLayerResult::incomplete(consumed as u32, (tpkt_len - start.len()) as u32);
-            }
+            let tpkt_len = match tpkt_frame(start, unsafe { S7COMM_MAX_BUFFER }) {
+                TpktFrame::Complete(len) => len,
+                TpktFrame::Incomplete(needed) => {
+                    let consumed = input.len() - start.len();
+                    return AppLayerResult::incomplete(consumed as u32, needed as u32);
+                }
+                TpktFrame::Invalid => return AppLayerResult::err(),
+            };
 
             let pdu_data = &start[..tpkt_len];
             self.emit_frames(flow, stream_slice, pdu_data);
@@ -326,19 +320,14 @@ impl S7commState {
 
         let mut start = input;
         while !start.is_empty() {
-            if start.len() < 4 {
-                let consumed = input.len() - start.len();
-                return AppLayerResult::incomplete(consumed as u32, (4 - start.len()) as u32);
-            }
-
-            let tpkt_len = u16::from_be_bytes([start[2], start[3]]) as usize;
-            if tpkt_len < 7 || tpkt_len > unsafe { S7COMM_MAX_BUFFER } {
-                return AppLayerResult::err();
-            }
-            if start.len() < tpkt_len {
-                let consumed = input.len() - start.len();
-                return AppLayerResult::incomplete(consumed as u32, (tpkt_len - start.len()) as u32);
-            }
+            let tpkt_len = match tpkt_frame(start, unsafe { S7COMM_MAX_BUFFER }) {
+                TpktFrame::Complete(len) => len,
+                TpktFrame::Incomplete(needed) => {
+                    let consumed = input.len() - start.len();
+                    return AppLayerResult::incomplete(consumed as u32, needed as u32);
+                }
+                TpktFrame::Invalid => return AppLayerResult::err(),
+            };
 
             let pdu_data = &start[..tpkt_len];
             self.emit_frames(flow, stream_slice, pdu_data);
@@ -570,13 +559,15 @@ impl S7commState {
 unsafe extern "C" fn s7comm_probing_parser(
     _flow: *const Flow, _direction: u8, input: *const u8, input_len: u32, _rdir: *mut u8,
 ) -> AppProto {
-    if input_len > 6 && !input.is_null() {
-        let slice = build_slice!(input, input_len as usize);
-        if probe_s7comm(slice) {
-            return ALPROTO_S7COMM;
-        }
+    if input.is_null() || input_len == 0 {
+        return ALPROTO_UNKNOWN;
     }
-    return ALPROTO_UNKNOWN;
+    let slice = build_slice!(input, input_len as usize);
+    match probe_iso102(slice) {
+        Iso102Probe::Detected(Iso102Payload::S7comm | Iso102Payload::S7commPlus) => ALPROTO_S7COMM,
+        Iso102Probe::NeedMore => ALPROTO_UNKNOWN,
+        _ => ALPROTO_FAILED,
+    }
 }
 
 extern "C" fn s7comm_state_new(_orig_state: *mut c_void, _orig_proto: AppProto) -> *mut c_void {
@@ -656,7 +647,8 @@ pub(crate) unsafe extern "C" fn s7comm_register_parser() {
         probe_ts: Some(s7comm_probing_parser),
         probe_tc: Some(s7comm_probing_parser),
         min_depth: 0,
-        max_depth: 16,
+        // Room for a full COTP CR (<= 259 bytes) plus the first DT header and payload byte.
+        max_depth: 512,
         state_new: s7comm_state_new,
         state_free: s7comm_state_free,
         tx_free: s7comm_state_tx_free,

@@ -2,19 +2,6 @@
 // Copyright (C) 2026 Leargas Security
 // License: GPL-2.0
 
-/// TPKT version (ISO 8073 transport)
-pub const TPKT_VERSION: u8 = 0x03;
-
-/// COTP PDU types
-pub const COTP_CR: u8 = 0xE0; // Connection Request
-pub const COTP_CC: u8 = 0xD0; // Connection Confirm
-pub const COTP_DT: u8 = 0xF0; // Data Transfer
-
-/// COTP parameter codes (in CR/CC PDUs)
-pub const COTP_PARAM_TPDU_SIZE: u8 = 0xC0;
-pub const COTP_PARAM_SRC_TSAP: u8 = 0xC1;
-pub const COTP_PARAM_DST_TSAP: u8 = 0xC2;
-
 /// S7comm protocol ID
 pub const S7COMM_PROTOCOL_ID: u8 = 0x32;
 
