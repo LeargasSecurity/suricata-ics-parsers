@@ -1,0 +1,252 @@
+# MMS (ISO 9506) / IEC 61850 / ICCP (TASE.2) Suricata Detection Rules
+# Copyright (C) 2026 Leargas Security
+# License: GPL-2.0
+#
+# These rules require the mms app-layer parser from the suricata-ics-parsers
+# plugin (TCP/102). Keywords: mms.pdu_type, mms.service, mms.dangerous,
+# mms.iccp_transfer_set, mms.domain, mms.item, mms.filename
+#
+# MMS requests can travel in either direction: in ICCP both control centres
+# act as clients. The mms.* keywords match each request once, in the
+# direction it was sent, so these rules use "any any -> any any" without a
+# flow direction.
+#
+# Many of these operations are routine for an authorised client (HMI,
+# gateway, engineering tool or ICCP peer). Scope the source to anything other
+# than those hosts to cut noise, e.g.:
+#   alert mms !$MMS_CLIENTS any -> $HOME_NET any (...)
+
+# ============================================================================
+# Association (ACSE)
+# ============================================================================
+
+# The AARQ carries an authentication value: usually a cleartext password
+# (ACSE password authentication, mechanism 2.2.3.1).
+alert mms any any -> any any (msg:"MMS Association request with authentication value"; \
+    flow:to_server; app-layer-event:mms.authentication; \
+    classtype:policy-violation; \
+    metadata:attack_target ICS, mitre_attack_technique T0859; \
+    sid:3702001; rev:1;)
+
+alert mms any any -> any any (msg:"MMS Association rejected"; \
+    flow:to_client; app-layer-event:mms.association_rejected; \
+    classtype:attempted-user; \
+    metadata:attack_target ICS, mitre_attack_technique T0859; \
+    sid:3702002; rev:1;)
+
+# ============================================================================
+# ATT&CK ICS: T0888 Remote System Information Discovery /
+#             T0861 Point & Tag Identification
+# ============================================================================
+
+alert mms any any -> any any (msg:"MMS Identify (device vendor/model/revision)"; \
+    mms.service:identify; \
+    classtype:attempted-recon; \
+    metadata:attack_target ICS, mitre_attack_technique T0888; \
+    sid:3702010; rev:1;)
+
+alert mms any any -> any any (msg:"MMS GetNameList (object enumeration)"; \
+    mms.service:getNameList; \
+    classtype:attempted-recon; \
+    metadata:attack_target ICS, mitre_attack_technique T0861; \
+    sid:3702011; rev:1;)
+
+alert mms any any -> any any (msg:"MMS File directory listing"; \
+    mms.service:fileDirectory; \
+    classtype:attempted-recon; \
+    metadata:attack_target ICS, mitre_attack_technique T0861; \
+    sid:3702012; rev:1;)
+
+# ============================================================================
+# ATT&CK ICS: T0855 Unauthorized Command Message / T0831 Manipulation of Control
+# IEC 61850 controls are writes to the CO functional constraint (LN$CO$...).
+# ============================================================================
+
+alert mms any any -> any any (msg:"IEC61850 Control Operate"; \
+    mms.service:write; mms.item; content:"$CO$"; content:"$Oper"; distance:0; \
+    classtype:attempted-admin; \
+    metadata:attack_target ICS, mitre_attack_technique T0855, mitre_attack_technique T0831; \
+    sid:3702020; rev:1;)
+
+alert mms any any -> any any (msg:"IEC61850 Control Select-Before-Operate"; \
+    mms.service:write; mms.item; content:"$CO$"; content:"$SBO"; distance:0; \
+    classtype:attempted-admin; \
+    metadata:attack_target ICS, mitre_attack_technique T0855; \
+    sid:3702021; rev:1;)
+
+alert mms any any -> any any (msg:"IEC61850 Control Cancel"; \
+    mms.service:write; mms.item; content:"$CO$"; content:"$Cancel"; distance:0; \
+    classtype:attempted-admin; \
+    metadata:attack_target ICS, mitre_attack_technique T0855; \
+    sid:3702022; rev:1;)
+
+# ============================================================================
+# ATT&CK ICS: T0836 Modify Parameter
+# ============================================================================
+
+# Setpoints (SP), setting groups (SG) and setting-group editing (SE).
+alert mms any any -> any any (msg:"IEC61850 Setting or setpoint write"; \
+    mms.service:write; mms.item; pcre:"/\$(SP|SG|SE)\$/"; \
+    classtype:attempted-admin; \
+    metadata:attack_target ICS, mitre_attack_technique T0836; \
+    sid:3702023; rev:1;)
+
+alert mms any any -> any any (msg:"MMS Data set (named variable list) defined"; \
+    mms.service:defineNamedVariableList; \
+    classtype:protocol-command-decode; \
+    metadata:attack_target ICS, mitre_attack_technique T0836; \
+    sid:3702030; rev:1;)
+
+alert mms any any -> any any (msg:"MMS Data set (named variable list) deleted"; \
+    mms.service:deleteNamedVariableList; \
+    classtype:attempted-admin; \
+    metadata:attack_target ICS, mitre_attack_technique T0836; \
+    sid:3702031; rev:1;)
+
+# A write to a transfer set name the peer obtained from Next_DSTransfer_Set:
+# (re)configures which data the remote control centre is sent and when.
+alert mms any any -> any any (msg:"ICCP Transfer set configured"; \
+    mms.iccp_transfer_set; \
+    classtype:protocol-command-decode; \
+    metadata:attack_target ICS, mitre_attack_technique T0836; \
+    sid:3702032; rev:1;)
+
+# ============================================================================
+# ATT&CK ICS: T0858 Change Operating Mode
+# ============================================================================
+
+# start (40), stop (41), resume (42), reset (43), kill (44)
+alert mms any any -> any any (msg:"MMS Program invocation start/stop/resume/reset/kill"; \
+    mms.service:>=40; mms.service:<=44; \
+    classtype:attempted-admin; \
+    metadata:attack_target ICS, mitre_attack_technique T0858; \
+    sid:3702040; rev:1;)
+
+# ============================================================================
+# ATT&CK ICS: T0843 Program Download / T0845 Program Upload
+# ============================================================================
+
+alert mms any any -> any any (msg:"MMS Domain download started (initiateDownloadSequence)"; \
+    mms.service:initiateDownloadSequence; \
+    classtype:attempted-admin; \
+    metadata:attack_target ICS, mitre_attack_technique T0843; \
+    sid:3702041; rev:1;)
+
+alert mms any any -> any any (msg:"MMS Domain download requested (requestDomainDownload)"; \
+    mms.service:requestDomainDownload; \
+    classtype:attempted-admin; \
+    metadata:attack_target ICS, mitre_attack_technique T0843; \
+    sid:3702042; rev:1;)
+
+alert mms any any -> any any (msg:"MMS Domain content loaded from file (loadDomainContent)"; \
+    mms.service:loadDomainContent; \
+    classtype:attempted-admin; \
+    metadata:attack_target ICS, mitre_attack_technique T0843; \
+    sid:3702043; rev:1;)
+
+alert mms any any -> any any (msg:"MMS Domain upload started (initiateUploadSequence)"; \
+    mms.service:initiateUploadSequence; \
+    classtype:attempted-recon; \
+    metadata:attack_target ICS, mitre_attack_technique T0845; \
+    sid:3702044; rev:1;)
+
+alert mms any any -> any any (msg:"MMS Domain upload requested (requestDomainUpload)"; \
+    mms.service:requestDomainUpload; \
+    classtype:attempted-recon; \
+    metadata:attack_target ICS, mitre_attack_technique T0845; \
+    sid:3702045; rev:1;)
+
+alert mms any any -> any any (msg:"MMS Domain content stored to file (storeDomainContent)"; \
+    mms.service:storeDomainContent; \
+    classtype:attempted-recon; \
+    metadata:attack_target ICS, mitre_attack_technique T0845; \
+    sid:3702046; rev:1;)
+
+# ============================================================================
+# ATT&CK ICS: T0809 Data Destruction / T0872 Indicator Removal on Host
+# ============================================================================
+
+alert mms any any -> any any (msg:"MMS Domain deleted"; \
+    mms.service:deleteDomain; \
+    classtype:attempted-admin; \
+    metadata:attack_target ICS, mitre_attack_technique T0809; \
+    sid:3702047; rev:1;)
+
+alert mms any any -> any any (msg:"MMS Program invocation deleted"; \
+    mms.service:deleteProgramInvocation; \
+    classtype:attempted-admin; \
+    metadata:attack_target ICS, mitre_attack_technique T0809; \
+    sid:3702048; rev:1;)
+
+alert mms any any -> any any (msg:"MMS File deleted"; \
+    mms.service:fileDelete; \
+    classtype:attempted-admin; \
+    metadata:attack_target ICS, mitre_attack_technique T0809; \
+    sid:3702051; rev:1;)
+
+alert mms any any -> any any (msg:"MMS File renamed"; \
+    mms.service:fileRename; \
+    classtype:attempted-admin; \
+    metadata:attack_target ICS, mitre_attack_technique T0809; \
+    sid:3702052; rev:1;)
+
+alert mms any any -> any any (msg:"MMS Journal initialized (log entries cleared)"; \
+    mms.service:initializeJournal; \
+    classtype:attempted-admin; \
+    metadata:attack_target ICS, mitre_attack_technique T0872; \
+    sid:3702060; rev:1;)
+
+alert mms any any -> any any (msg:"MMS Journal deleted"; \
+    mms.service:deleteJournal; \
+    classtype:attempted-admin; \
+    metadata:attack_target ICS, mitre_attack_technique T0872; \
+    sid:3702061; rev:1;)
+
+# ============================================================================
+# File transfer: T0867 Lateral Tool Transfer / T0882 Theft of Operational Information
+# ============================================================================
+
+# The server fetches a file from a (third-party) file server onto the device.
+alert mms any any -> any any (msg:"MMS ObtainFile (file pushed onto device)"; \
+    mms.service:obtainFile; \
+    classtype:attempted-admin; \
+    metadata:attack_target ICS, mitre_attack_technique T0867; \
+    sid:3702050; rev:1;)
+
+# Routine for disturbance-record (COMTRADE) retrieval; tune to your clients.
+alert mms any any -> any any (msg:"MMS File read from device (fileOpen)"; \
+    mms.service:fileOpen; \
+    classtype:protocol-command-decode; \
+    metadata:attack_target ICS, mitre_attack_technique T0882; \
+    sid:3702053; rev:1;)
+
+# ============================================================================
+# Parser anomaly / DoS events (ATT&CK ICS T0814 Denial of Service)
+# ============================================================================
+
+alert mms any any -> any any (msg:"MMS ANOMALY Malformed session/presentation/MMS PDU"; \
+    app-layer-event:mms.malformed_pdu; \
+    classtype:protocol-command-decode; \
+    metadata:attack_target ICS, mitre_attack_technique T0814; \
+    sid:3702300; rev:1;)
+
+# Reassembled COTP message larger than app-layer.protocols.mms.max-message-size.
+alert mms any any -> any any (msg:"MMS ANOMALY Message exceeds max-message-size"; \
+    app-layer-event:mms.message_too_large; \
+    classtype:attempted-dos; \
+    metadata:attack_target ICS, mitre_attack_technique T0814; \
+    sid:3702301; rev:1;)
+
+alert mms any any -> any any (msg:"MMS DoS Transaction flood (max-tx guard tripped)"; \
+    app-layer-event:mms.too_many_transactions; \
+    classtype:attempted-dos; \
+    metadata:attack_target ICS, mitre_attack_technique T0814; \
+    sid:3702302; rev:1;)
+
+# A reject is paired with the request it refuses; mms.pdu_type matches it once,
+# in the direction it was sent.
+alert mms any any -> any any (msg:"MMS Reject PDU (peer could not decode a PDU)"; \
+    mms.pdu_type:reject; \
+    classtype:protocol-command-decode; \
+    metadata:attack_target ICS, mitre_attack_technique T0814; \
+    sid:3702303; rev:1;)

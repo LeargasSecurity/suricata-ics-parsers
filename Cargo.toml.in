@@ -3,7 +3,7 @@ name = "suricata-s7comm"
 version = "0.1.0"
 edition = "2021"
 authors = ["Leargas Security"]
-description = "Suricata S7comm/S7comm-plus and IEC 60870-5-104 ICS protocol parser plugin"
+description = "Suricata S7comm/S7comm-plus, IEC 60870-5-104 and MMS/IEC 61850/ICCP ICS protocol parser plugin"
 license = "GPL-2.0"
 
 [lib]
@@ -13,6 +13,8 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 nom7 = { version = "7.0", package = "nom" }
 libc = "~0.2.82"
+# ASN.1 BER decoding for MMS; same version as Suricata 8.0.x so the crate is shared.
+der-parser = { version = "~9.0.0", default-features = false }
 # These paths are filled in from $SURICATA_SRC by `make configure`.
 # Do not edit the generated Cargo.toml directly; edit Cargo.toml.in instead.
 suricata = { path = "@SURICATA_RUST@" }

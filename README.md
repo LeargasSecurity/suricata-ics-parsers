@@ -13,6 +13,11 @@ responses, exposes rich detection keywords, emits structured EVE JSON, and maps
 observed operations to the [MITRE ATT&CK for ICS](https://attack.mitre.org/matrices/ics/)
 framework.
 
+The same plugin library also provides parsers for **IEC 60870-5-104** (TCP/2404)
+and **MMS** (ISO 9506 on TCP/102: **IEC 61850** client/server and **ICCP /
+TASE.2**); see [IEC 60870-5-104](#iec-60870-5-104) and
+[MMS (IEC 61850 / ICCP)](#mms-iec-61850--iccp).
+
 Maintained by **Leargas Security**.
 
 > **Note:** This is an **out-of-tree** plugin. It is **not affiliated with or endorsed by OISF**.
@@ -106,7 +111,7 @@ sudo make install SURICATA_SRC=/opt/suricata-8.0.6
 # ...or manually:
 sudo mkdir -p /usr/local/lib/suricata/plugins
 sudo cp target/release/libsuricata_s7comm.so /usr/local/lib/suricata/plugins/
-sudo cp rules/s7comm.rules rules/iec104.rules /usr/local/var/lib/suricata/rules/
+sudo cp rules/s7comm.rules rules/iec104.rules rules/mms.rules /usr/local/var/lib/suricata/rules/
 ```
 
 Enable the plugin and protocol in `suricata.yaml`:
@@ -129,6 +134,12 @@ app-layer:
       detection-ports:
         dp: 2404
       # max-tx: 1024
+    mms:
+      enabled: yes
+      detection-ports:
+        dp: 102
+      # max-tx: 1024
+      # max-message-size: 1048576  # reassembled COTP message cap (DoS guard)
 
 outputs:
   - eve-log:
@@ -136,6 +147,7 @@ outputs:
       types:
         - s7comm
         - iec104
+        - mms
         - alert
         - anomaly
 
@@ -143,6 +155,7 @@ rule-files:
   - suricata.rules
   - s7comm.rules
   - iec104.rules
+  - mms.rules
 ```
 
 Validate the configuration:
@@ -324,6 +337,7 @@ Fields include (as applicable): `pdu_reference`, `rosctr`, `function_code`,
 | Element | Support |
 | --- | --- |
 | TPKT / COTP (CR, CC, DT) | Yes |
+| COTP DT segmentation (EOT) | Reassembled for MMS; S7comm never segments |
 | COTP TSAP (rack/slot) | Yes |
 | S7comm Job / Ack / Ack-Data | Yes |
 | Read / Write Variable item addressing | Yes (multi-item) |
@@ -382,6 +396,72 @@ Example EVE record (single command, execute ON):
 
 ---
 
+## MMS (IEC 61850 / ICCP)
+
+The `mms` app-layer parser handles MMS (ISO 9506) over the OSI stack on
+TCP/102: TPKT, COTP (with DT reassembly), ISO 8327 session, ISO 8823
+presentation, ACSE and MMS. It covers IEC 61850 client/server traffic and
+ICCP / TASE.2 between control centres. S7comm and MMS share port 102;
+protocol detection looks at the first COTP DT payload, so each flow goes to
+the right parser. See [`doc/mms-keywords.rst`](doc/mms-keywords.rst) for full
+details.
+
+A confirmed request and its response, error or reject (matched by invoke ID
+and direction) form one transaction, as do the association (AARQ/AARE, with
+the MMS initiate PDUs) and release. Reports and aborts are single-message
+transactions. At `max-tx` pending requests are closed and
+`too_many_transactions` is raised; parsing of the flow continues.
+
+| Keyword | Type | Description |
+| --- | --- | --- |
+| `mms.pdu_type` | uint8 or name | MMS PDU type (`confirmed_request`, `unconfirmed`, `initiate_error`, …) |
+| `mms.service` | uint8 or name | Confirmed service (`read`, `write`, `getNameList`, `fileOpen`, …) |
+| `mms.dangerous` | bool | Controls, setting writes, program control, downloads, deletions |
+| `mms.iccp_transfer_set` | bool | Write to an ICCP transfer set learned from `Next_DSTransfer_Set` |
+| `mms.domain` | sticky multi-buffer | Domain names in the request |
+| `mms.item` | sticky multi-buffer | Object (item) names in the request |
+| `mms.filename` | sticky multi-buffer | File names in the request |
+
+Request keywords match in the direction the request was sent, which can be
+either way in ICCP. Frame: `mms.pdu`. App-layer events include
+`control_operation`, `setting_change`, `data_set_change`,
+`iccp_transfer_set_write`, `program_control`, `program_download`,
+`domain_delete`, `file_delete`, `journal_change`, `authentication`,
+`association_rejected`, `reject`, `abort`, `malformed_pdu` and
+`message_too_large`.
+
+`rules/mms.rules` (SIDs `3702001–3702303`) covers IEC 61850 controls
+(T0855/T0831), setting and data-set changes (T0836), ICCP transfer set
+configuration (T0836), program control (T0858), domain download/upload
+(T0843/T0845), deletions (T0809), journal clearing (T0872), file transfer
+(T0867/T0882), identify and object enumeration (T0888/T0861), ACSE password
+authentication (T0859), and protocol anomalies.
+
+Example EVE record (IEC 61850 control, Operate):
+
+```json
+{
+  "event_type": "mms",
+  "mms": {
+    "session": "data",
+    "request": {
+      "direction": "to_server", "pdu_type": "confirmed_request", "invoke_id": 3,
+      "service": "write",
+      "objects": [ { "scope": "domain", "domain": "simpleIOGenericIO",
+                     "item": "GGIO1$CO$SPCSO1$Oper" } ]
+    },
+    "response": {
+      "direction": "to_client", "pdu_type": "confirmed_response", "invoke_id": 3,
+      "service": "write", "success_count": 1, "failure_count": 0
+    },
+    "is_dangerous": true,
+    "attack_technique": "T0855 Unauthorized Command Message"
+  }
+}
+```
+
+---
+
 ## Testing
 
 ### Rust unit tests
@@ -390,9 +470,11 @@ Example EVE record (single command, execute ON):
 cargo test --release
 ```
 
-Covers PDU parsing, COTP TSAP extraction, multi-item Read/Write Var,
-S7comm-plus, invalid-ROSCTR handling, malformed-input safety, and enum
-mappings.
+Covers PDU parsing, COTP TSAP extraction and DT reassembly, multi-item
+Read/Write Var, S7comm-plus, invalid-ROSCTR handling, IEC-104 APDUs, MMS
+session/presentation/ACSE/MMS decoding (including vectors from real
+captures), request/response pairing, ICCP transfer set tracking,
+malformed-input safety, and enum mappings.
 
 ### suricata-verify tests
 
@@ -407,7 +489,13 @@ rules, and output assertions:
 | `s7comm-recon-szl` | Read SZL reconnaissance via userdata keywords |
 | `s7comm-auth-password` | Security/password access + `frame` keyword |
 | `s7comm-split-pdu` | S7 PDU split across TCP segments is reassembled (regression) |
-| `iso102-not-s7comm` | Non-S7 (ISO session/MMS) TCP/102 traffic is not labelled `s7comm` |
+| `iso102-not-s7comm` | Non-S7 (ISO session) TCP/102 traffic is not labelled `s7comm` |
+| `mms-iec61850-control` | IEC 61850 select-before-operate and operate, association logging, `mms.dangerous` |
+| `mms-iccp` | ICCP association, transfer set tracking in both directions, reports, recon rules |
+| `mms-dataset` | Data set define (with members) and delete |
+| `mms-file-segmented` | File read whose response spans several COTP DTs (reassembly) |
+| `mms-max-message-size` | Oversized reassembled message raises `message_too_large` and is skipped |
+| `mms-auth` | ACSE password authentication detected without logging the password |
 | `iec104-commands` | IEC-104 STARTDT/GI/control commands vs. shipped `iec104.rules`, `iec104.dangerous`, EVE decoding |
 | `iec104-sq` | IEC-104 SQ=1 ASDUs, multiple APDUs per segment, no false positives |
 
@@ -422,6 +510,12 @@ SURICATA_ICS_PLUGIN=/path/to/suricata-ics-parsers/target/release/libsuricata_s7c
   ../suricata-verify/run.py --no-validation \
   --testdir=/path/to/suricata-ics-parsers/tests          # or a name/prefix, e.g. iec104
 ```
+
+The `mms-*` captures other than `mms-iccp` (a Wireshark sample capture) are
+generated with libIEC61850 by
+[`scripts/gen-mms-pcaps.sh`](scripts/gen-mms-pcaps.sh), which builds its
+example servers and clients at a pinned commit and records each scenario on
+loopback (needs `sudo` for `tcpdump` and `setcap`).
 
 ### Batch runner over a pcap directory
 
@@ -478,13 +572,18 @@ src/
   consts.rs           Protocol constants and enums (+ unit tests)
   detect.rs           Detection keyword + sticky-buffer registration
   log.rs              EVE JSON logger
+  cotp.rs             Shared TPKT/COTP framing, DT reassembly and TCP/102 detection
   iec104/             IEC 60870-5-104 parser (consts, parser, state, detect, log)
+  mms/                MMS / IEC 61850 / ICCP parser (consts, parser, state, detect, log)
 rules/s7comm.rules    Bundled detection signatures
 rules/iec104.rules    IEC 60870-5-104 detection signatures
+rules/mms.rules       MMS / IEC 61850 / ICCP detection signatures
 doc/s7comm-keywords.rst  Keyword/frame/event reference
 doc/iec104-keywords.rst  IEC 60870-5-104 keyword/frame/event reference
+doc/mms-keywords.rst     MMS keyword/frame/event reference
 scripts/
   run-s7comm-pcaps.sh  Batch/loop runner over a pcap directory
+  gen-mms-pcaps.sh     Generate MMS test captures with libIEC61850
 tests/                suricata-verify tests with pcaps
 ```
 
@@ -501,6 +600,16 @@ tests/                suricata-verify tests with pcaps
   data-block number to your environment.
 - IEC 60870-5-104 assumes the standard 104 profile (2-byte COT, 2-byte common
   address, 3-byte IOA). IEC 62351-3 (TLS-wrapped 104) is not decoded.
+- MMS decodes the fields needed for logging and detection (services, object,
+  domain and file names, results, association parameters), not data values.
+  Only presentation fully-encoded data and AP titles in OBJECT IDENTIFIER form
+  are decoded. MMS over TLS (IEC 62351-4) is not decoded.
+- IEC 61850 control and setting detection relies on the standard
+  functional-constraint naming (`$CO$`, `$SP$`, `$SG$`, `$SE$`). ICCP transfer
+  set writes are only recognised when the `Next_DSTransfer_Set` read that
+  returned the name is in the same flow.
+- The ACSE association-rejected and program-control/download paths are
+  covered by unit tests; no public capture exercises them yet.
 
 ---
 

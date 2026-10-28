@@ -14,12 +14,12 @@ command: |
 
 checks:
   # COTP DT payloads carry an ISO 8327 session SPDU (as MMS/ICCP do), not S7.
-  # The shared TCP/102 probe must reject the flow rather than label it s7comm.
+  # The S7comm probe must reject the flow; the MMS parser claims it instead.
   - filter:
       count: 1
       match:
         event_type: flow
-        app_proto: failed
+        app_proto: mms
   - filter:
       count: 0
       match:

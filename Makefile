@@ -48,7 +48,7 @@ install: build
 	install -d "$(PLUGIN_DIR)"
 	install -m 0644 "$(PLUGIN_SO)" "$(PLUGIN_DIR)/"
 	install -d "$(RULES_DIR)"
-	install -m 0644 rules/s7comm.rules rules/iec104.rules "$(RULES_DIR)/"
+	install -m 0644 rules/s7comm.rules rules/iec104.rules rules/mms.rules "$(RULES_DIR)/"
 	@echo "Installed plugin to $(PLUGIN_DIR) and rules to $(RULES_DIR)"
 
 clean:
