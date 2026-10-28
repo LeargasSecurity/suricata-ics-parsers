@@ -9,3 +9,6 @@ target/
 # Suricata source tree it is built against, so Cargo.lock is not committed.
 /Cargo.lock
 
+
+# Local ICS test captures (not redistributed)
+/pcap/
