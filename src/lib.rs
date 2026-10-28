@@ -5,6 +5,8 @@
 mod consts;
 mod cotp;
 mod detect;
+#[cfg(fuzzing)]
+pub mod fuzz_api;
 mod iec104;
 mod log;
 mod mms;

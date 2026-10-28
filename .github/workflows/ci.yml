@@ -5,6 +5,8 @@ on:
     branches: [ main ]
   pull_request:
   workflow_dispatch:
+  schedule:
+    - cron: "17 3 * * 1"   # weekly: fuzzing and a fresh Docker build
 
 env:
   SURICATA_VERSION: "8.0.6"
@@ -74,7 +76,6 @@ jobs:
           if-no-files-found: error
 
       - name: suricata-verify tests
-        continue-on-error: true
         run: |
           git clone --depth 1 https://github.com/OISF/suricata-verify.git
           # run.py uses ./src/suricata from the current directory. Plugin EVE
@@ -83,10 +84,100 @@ jobs:
           VERIFY="$PWD/suricata-verify/run.py"
           TESTS="$PWD/tests"
           cd "suricata-${SURICATA_VERSION}"
-          for t in "$TESTS"/*/; do
-            name="$(basename "$t")"
-            echo "::group::suricata-verify $name"
-            python3 "$VERIFY" --no-validation \
-              --testdir="$TESTS" "$name" || echo "verify: $name failed (non-blocking)"
+          python3 "$VERIFY" --no-validation --testdir="$TESTS"
+
+  docker:
+    name: docker image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      # The Dockerfile itself fails the build unless the plugin loads and
+      # logs MMS; this then smoke-tests the slim runtime image.
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: suricata-ics:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke test runtime image (S7comm, IEC-104, MMS)
+        run: |
+          set -e
+          for t in s7comm-write-var iec104-commands mms-iec61850-control; do
+            mkdir -p "out/$t" && chmod 777 "out/$t"
+            docker run --rm -v "$PWD/tests:/tests:ro" -v "$PWD/out/$t:/out" \
+              suricata-ics:ci -k none -r "/tests/$t/input.pcap" -l /out
+          done
+          check() {  # dir event_type
+            n=$(grep -c "\"event_type\":\"$2\"" "out/$1/eve.json" || true)
+            a=$(grep -c '"event_type":"alert"' "out/$1/eve.json" || true)
+            echo "$1: $n $2 records, $a alerts"
+            [ "$n" -gt 0 ] && [ "$a" -gt 0 ]
+          }
+          check s7comm-write-var s7comm
+          check iec104-commands iec104
+          check mms-iec61850-control mms
+
+  fuzz:
+    name: fuzz (60 s per target)
+    # Too slow for every PR; runs on main, weekly and on demand.
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies and tshark
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            build-essential autoconf automake libtool pkg-config \
+            libpcre2-dev libyaml-dev libjansson-dev libcap-ng-dev \
+            libmagic-dev libnet1-dev libpcap-dev zlib1g-dev \
+            libnss3-dev libnspr4-dev liblz4-dev curl tshark
+
+      - name: Install Rust toolchains and cargo-fuzz
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup toolchain install nightly --profile minimal
+          rustup default stable
+          cargo install --force cbindgen
+          cargo install --locked cargo-fuzz
+
+      - name: Cache Suricata source build
+        id: cache-suricata
+        uses: actions/cache@v4
+        with:
+          path: suricata-${{ env.SURICATA_VERSION }}
+          key: suricata-${{ env.SURICATA_VERSION }}-${{ runner.os }}
+
+      - name: Download & build Suricata ${{ env.SURICATA_VERSION }}
+        if: steps.cache-suricata.outputs.cache-hit != 'true'
+        run: |
+          curl -sSLO "https://www.openinfosecfoundation.org/download/suricata-${SURICATA_VERSION}.tar.gz"
+          tar xzf "suricata-${SURICATA_VERSION}.tar.gz"
+          cd "suricata-${SURICATA_VERSION}"
+          ./configure --enable-rust --disable-gccmarch-native
+          make -j"$(nproc)"
+
+      - name: Fuzz
+        run: |
+          make configure SURICATA_SRC="$PWD/suricata-${SURICATA_VERSION}"
+          python3 fuzz/make-seeds.py
+          cd fuzz
+          for t in cotp mms_message mms_state s7comm iec104; do
+            echo "::group::fuzz $t"
+            cargo +nightly fuzz run -O "$t" "corpus/$t" -- -max_total_time=60
             echo "::endgroup::"
           done
+
+      - name: Upload crash artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-artifacts
+          path: fuzz/artifacts/

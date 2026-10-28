@@ -1,5 +1,6 @@
-# Multi-stage build: compiles Suricata 8.0.x and the S7comm plugin, then ships a
-# slim runtime image with Suricata + the plugin + rules preinstalled.
+# Multi-stage build: compiles Suricata 8.0.x and the ICS parsers plugin
+# (S7comm, IEC 60870-5-104, MMS), then ships a slim runtime image with
+# Suricata + the plugin + rules preinstalled.
 #
 #   docker build -t suricata-ics .
 #   docker run --rm -v "$PWD:/data" suricata-ics -r /data/capture.pcap -l /data/out -k none
@@ -16,10 +17,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential autoconf automake libtool pkg-config curl ca-certificates \
         libpcre2-dev libyaml-dev libjansson-dev libcap-ng-dev libmagic-dev \
         libnet1-dev libpcap-dev zlib1g-dev libnss3-dev libnspr4-dev liblz4-dev \
-        rustc cargo \
     && rm -rf /var/lib/apt/lists/*
 
-RUN cargo install --force cbindgen && cp "$HOME/.cargo/bin/cbindgen" /usr/local/bin/
+# Current stable Rust (the distro rustc can be older than the dependencies
+# need; Cargo.lock is not committed, so the latest compatible crates resolve).
+ENV RUSTUP_HOME=/opt/rustup CARGO_HOME=/opt/cargo PATH=/opt/cargo/bin:$PATH
+RUN curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable \
+    && cargo install --force cbindgen
 
 # Build and install Suricata.
 WORKDIR /src
@@ -40,10 +44,20 @@ RUN make build SURICATA_SRC="/src/suricata-${SURICATA_VERSION}" \
         PLUGIN_DIR=/usr/local/lib/suricata/plugins \
         RULES_DIR=/usr/local/var/lib/suricata/rules
 
-# Enable the plugin and its rules in the config.
+# Enable the plugin, its rules and its EVE record types in the config.
 RUN CONF=/usr/local/etc/suricata/suricata.yaml \
     && printf '\n# --- ICS parsers plugin (added at image build) ---\nplugins:\n  - /usr/local/lib/suricata/plugins/libsuricata_ics.so\n' >> "$CONF" \
-    && sed -i 's#^rule-files:#rule-files:\n  - s7comm.rules\n  - iec104.rules\n  - mms.rules#' "$CONF" || true
+    && sed -i 's#^rule-files:#rule-files:\n  - s7comm.rules\n  - iec104.rules\n  - mms.rules#' "$CONF" \
+    && sed -i '0,/^      types:$/s//      types:\n        - s7comm\n        - iec104\n        - mms/' "$CONF" \
+    && grep -q '^        - mms$' "$CONF"
+
+# Fail the build unless the plugin loads, parses MMS and logs it.
+RUN mkdir -p /tmp/smoke \
+    && /usr/local/bin/suricata -c /usr/local/etc/suricata/suricata.yaml -k none \
+        -r /plugin/tests/mms-reduced-stack/input.pcap -l /tmp/smoke \
+    && grep -q '"event_type":"mms"' /tmp/smoke/eve.json \
+    && grep -q '"signature_id":3702040' /tmp/smoke/eve.json \
+    && rm -rf /tmp/smoke
 
 # ---------------------------------------------------------------------------
 FROM ubuntu:24.04 AS runtime
@@ -56,9 +70,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY --from=builder /usr/local /usr/local
 RUN ldconfig
-
-# Basic sanity check that the plugin loads.
-RUN /usr/local/bin/suricata --build-info >/dev/null 2>&1 || true
 
 ENTRYPOINT ["/usr/local/bin/suricata", "-c", "/usr/local/etc/suricata/suricata.yaml"]
 CMD ["--build-info"]

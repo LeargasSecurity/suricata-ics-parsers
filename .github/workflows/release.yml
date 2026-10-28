@@ -1,0 +1,143 @@
+name: Release
+
+# Push a tag like v0.2.0 to build, test and publish a GitHub release with the
+# plugin library, rules and docs. The tag must match the version in
+# Cargo.toml.in, and the CHANGELOG must have a "## [<version>]" section.
+
+on:
+  push:
+    tags: [ "v*" ]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to (re)build and publish, e.g. v0.2.0"
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  SURICATA_VERSION: "8.0.6"
+  CARGO_TERM_COLOR: always
+
+jobs:
+  release:
+    name: build, test & publish
+    # Older glibc than ubuntu-latest, so the .so also loads on older sensors.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Resolve and check version
+        id: ver
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          VERSION="${TAG#v}"
+          CRATE="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml.in | head -1)"
+          if [ "$VERSION" != "$CRATE" ]; then
+            echo "::error::tag $TAG does not match Cargo.toml.in version $CRATE"
+            exit 1
+          fi
+          if ! grep -q "^## \[$VERSION\]" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md has no '## [$VERSION]' section"
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential autoconf automake libtool pkg-config \
+            libpcre2-dev libyaml-dev libjansson-dev libcap-ng-dev \
+            libmagic-dev libnet1-dev libpcap-dev zlib1g-dev \
+            libnss3-dev libnspr4-dev liblz4-dev curl python3-yaml
+
+      - name: Install Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          cargo install --force cbindgen
+
+      - name: Cache Suricata source build
+        id: cache-suricata
+        uses: actions/cache@v4
+        with:
+          path: suricata-${{ env.SURICATA_VERSION }}
+          key: suricata-${{ env.SURICATA_VERSION }}-ubuntu-22.04
+
+      - name: Download & build Suricata ${{ env.SURICATA_VERSION }}
+        if: steps.cache-suricata.outputs.cache-hit != 'true'
+        run: |
+          curl -sSLO "https://www.openinfosecfoundation.org/download/suricata-${SURICATA_VERSION}.tar.gz"
+          tar xzf "suricata-${SURICATA_VERSION}.tar.gz"
+          cd "suricata-${SURICATA_VERSION}"
+          ./configure --enable-rust --disable-gccmarch-native
+          make -j"$(nproc)"
+
+      - name: Build plugin
+        run: make build SURICATA_SRC="$PWD/suricata-${SURICATA_VERSION}"
+
+      - name: Unit tests
+        run: make test SURICATA_SRC="$PWD/suricata-${SURICATA_VERSION}"
+
+      # Blocking: a release must not ship with a failing pcap test.
+      - name: suricata-verify tests
+        run: |
+          git clone --depth 1 https://github.com/OISF/suricata-verify.git
+          export SURICATA_ICS_PLUGIN="$PWD/target/release/libsuricata_ics.so"
+          VERIFY="$PWD/suricata-verify/run.py"
+          TESTS="$PWD/tests"
+          cd "suricata-${SURICATA_VERSION}"
+          python3 "$VERIFY" --no-validation --testdir="$TESTS"
+
+      - name: Package
+        id: pkg
+        run: |
+          NAME="suricata-ics-parsers-${{ steps.ver.outputs.version }}-suricata-${SURICATA_VERSION}-linux-x86_64"
+          mkdir -p "dist/$NAME/rules" "dist/$NAME/doc"
+          cp target/release/libsuricata_ics.so "dist/$NAME/"
+          cp rules/*.rules "dist/$NAME/rules/"
+          cp doc/*.rst "dist/$NAME/doc/"
+          cp README.md CHANGELOG.md LICENSE "dist/$NAME/"
+          tar -C dist -czf "dist/$NAME.tar.gz" "$NAME"
+          cp target/release/libsuricata_ics.so "dist/libsuricata_ics-suricata-${SURICATA_VERSION}.so"
+          cd dist
+          sha256sum "$NAME.tar.gz" "libsuricata_ics-suricata-${SURICATA_VERSION}.so" > SHA256SUMS
+          cat SHA256SUMS
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Release notes from CHANGELOG
+        run: |
+          VERSION="${{ steps.ver.outputs.version }}"
+          {
+            echo "Built against **Suricata ${SURICATA_VERSION}**. The plugin must be"
+            echo "loaded by the same Suricata version it was built against; rebuild"
+            echo "it from source (\`make build SURICATA_SRC=...\`) for other versions."
+            echo
+            awk -v v="$VERSION" '
+              $0 ~ "^## \\[" v "\\]" { on = 1; next }
+              on && /^## \[/ { exit }
+              on { print }
+            ' CHANGELOG.md
+          } > dist/NOTES.md
+          cat dist/NOTES.md
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ steps.ver.outputs.tag }}"
+          NAME="${{ steps.pkg.outputs.name }}"
+          FILES="dist/$NAME.tar.gz dist/libsuricata_ics-suricata-${SURICATA_VERSION}.so dist/SHA256SUMS"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" $FILES --clobber
+            gh release edit "$TAG" --notes-file dist/NOTES.md
+          else
+            gh release create "$TAG" $FILES \
+              --title "$TAG — ICS protocol parsers for Suricata ${SURICATA_VERSION}" \
+              --notes-file dist/NOTES.md
+          fi

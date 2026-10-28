@@ -526,6 +526,24 @@ generated with libIEC61850 by
 example servers and clients at a pinned commit and records each scenario on
 loopback (needs `sudo` for `tcpdump` and `setcap`).
 
+### Fuzzing
+
+[`fuzz/`](fuzz/) holds [cargo-fuzz](https://github.com/rust-fuzz/cargo-fuzz)
+targets for every parser that handles untrusted traffic: `cotp` (TPKT/COTP
+framing, reassembly, TCP/102 detection), `mms_message` (session/presentation/
+ACSE/MMS decoding), `mms_state` (the MMS state machine: framing, reassembly,
+pairing, gaps and transaction limits), `s7comm` and `iec104`. They need a
+nightly toolchain and a configured tree (`make configure`):
+
+```bash
+cargo install cargo-fuzz
+cd fuzz
+cargo +nightly fuzz run -O mms_state corpus/mms_state -- -max_total_time=600
+```
+
+The targets call entry points in `src/fuzz_api.rs`, which only exists when
+built with `--cfg fuzzing` (cargo-fuzz sets it).
+
 ### Batch runner over a pcap directory
 
 [`scripts/run-s7comm-pcaps.sh`](scripts/run-s7comm-pcaps.sh) runs Suricata with
@@ -590,11 +608,33 @@ rules/mms.rules       MMS / IEC 61850 / ICCP detection signatures
 doc/s7comm-keywords.rst  Keyword/frame/event reference
 doc/iec104-keywords.rst  IEC 60870-5-104 keyword/frame/event reference
 doc/mms-keywords.rst     MMS keyword/frame/event reference
+fuzz/                 cargo-fuzz targets and seed corpora
 scripts/
   run-s7comm-pcaps.sh  Batch/loop runner over a pcap directory
   gen-mms-pcaps.sh     Generate MMS test captures with libIEC61850
 tests/                suricata-verify tests with pcaps
 ```
+
+---
+
+## Performance
+
+Measured on a 4-core VM with Suricata 8.0.6, the full rule set (`s7comm`,
+`iec104` and `mms` rules) and MMS EVE logging, replaying synthetic IEC 61850
+traffic (reads, control writes, ICCP reports):
+
+- **Live capture (AF_PACKET):** 80 Mbit/s (about 59,000 packets/s) of pure MMS
+  across 50 flows with no drops, no stream gaps, every transaction decoded
+  and every alert raised. That is far above typical MMS volumes; above about
+  100 Mbit/s the replay tool and Suricata competed for the same four cores.
+- **Per flow:** about 150,000 MMS transactions/s parsed (about 63,000/s with
+  all rules). A single flow is handled by one worker thread.
+- **Memory:** flat over 1.8 million transactions in one flow and 200,000
+  unanswered requests; the plugin adds a few MB over Suricata alone.
+  Unanswered requests are bounded by `max-tx`.
+
+Size production sensors on their own hardware and traffic; these figures
+show that MMS parsing is unlikely to be the bottleneck for ICS links.
 
 ---
 
