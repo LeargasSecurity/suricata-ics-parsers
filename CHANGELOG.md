@@ -26,6 +26,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   continues, so unanswered requests cannot switch off inspection.
 - `CotpReassembler` in the shared `cotp` module: joins COTP DT segments
   (EOT flag) into complete messages, with a size limit.
+- MMS carried directly on COTP (reduced stack, without the ISO session,
+  presentation and ACSE layers) is detected and decoded, as used by some MMS
+  tools and scanners. A malformed TPKT frame is now reported as
+  `malformed_pdu` without disabling MMS inspection of the rest of the flow.
+  `scripts/gen-mms-reduced-stack-pcap.py` and the `mms-reduced-stack` test
+  cover it.
 - suricata-verify tests `mms-iec61850-control`, `mms-iccp`, `mms-dataset`,
   `mms-file-segmented`, `mms-max-message-size` and `mms-auth`, and
   `scripts/gen-mms-pcaps.sh`, which generates their captures with

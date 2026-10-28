@@ -1,0 +1,77 @@
+requires:
+  min-version: 8.0.0
+  # Absolute path to libsuricata_ics.so. The test is skipped when unset.
+  env:
+    - SURICATA_ICS_PLUGIN
+
+# Run with the shipped rules/mms.rules so the test guards the real ruleset.
+command: |
+  ${SRCDIR}/src/suricata --init-errors-fatal -k none \
+      --set plugins.0="${SURICATA_ICS_PLUGIN}" \
+      --set classification-file="${SRCDIR}/etc/classification.config" \
+      --set reference-config-file="${SRCDIR}/etc/reference.config" \
+      -c "${TEST_DIR}/suricata.yaml" -l "${OUTPUT_DIR}" \
+      -r "${TEST_DIR}/input.pcap" -S "${TEST_DIR}/../../rules/mms.rules"
+
+checks:
+  # MMS carried directly on COTP (no ISO session/presentation/ACSE), as some
+  # tools and scanners send it. The flow is still detected and decoded.
+  - filter:
+      count: 1
+      match:
+        event_type: flow
+        app_proto: mms
+
+  # Reduced-stack transactions have no session layer.
+  - filter:
+      count: 3
+      match:
+        event_type: mms
+  - filter:
+      count: 1
+      match:
+        event_type: mms
+        mms.request.pdu_type: initiate_request
+        mms.response.pdu_type: initiate_response
+
+  # start is dangerous and raises program_control + the program-control rule
+  - filter:
+      count: 1
+      match:
+        event_type: mms
+        mms.request.service: start
+        mms.request.names[0]: P1
+        mms.is_dangerous: true
+        mms.attack_technique: "T0858 Change Operating Mode"
+        mms.response.service: start
+  - filter:
+      count: 1
+      match:
+        event_type: anomaly
+        anomaly.event: program_control
+  - filter:
+      count: 1
+      match:
+        event_type: alert
+        alert.signature_id: 3702040
+
+  # the read is benign and paired
+  - filter:
+      count: 1
+      match:
+        event_type: mms
+        mms.request.service: read
+        mms.request.objects[0].item: V1
+        mms.is_dangerous: false
+        mms.response.service: read
+
+  # clean framing: no malformed/anomaly noise, and only the one alert
+  - filter:
+      count: 0
+      match:
+        event_type: anomaly
+        anomaly.event: malformed_pdu
+  - filter:
+      count: 1
+      match:
+        event_type: alert

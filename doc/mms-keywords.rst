@@ -24,8 +24,11 @@ Enable the parser in ``suricata.yaml``:
 
 S7comm and MMS share port 102 and the same COTP connection handshake.
 Protocol detection skips the COTP CR/CC and looks at the first COTP DT
-payload: S7comm (``0x32``) and S7comm-Plus (``0x72``) go to ``s7comm``, an
-ISO 8327 session SPDU goes to ``mms``, anything else ends as ``failed``.
+payload: S7comm (``0x32``) and S7comm-Plus (``0x72``) go to ``s7comm``; an
+ISO 8327 session SPDU, or an MMS PDU carried directly on COTP (reduced stack,
+as some tools and scanners send it), goes to ``mms``; anything else ends as
+``failed``. A malformed TPKT frame is reported as ``malformed_pdu`` and does
+not disable inspection of the rest of the flow.
 
 Transactions
 ------------

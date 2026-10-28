@@ -504,12 +504,12 @@ impl MmsState {
         }
     }
 
-    fn handle_apdu(&mut self, apdu: Apdu, spdu: u8, to_server: bool) {
+    fn handle_apdu(&mut self, apdu: Apdu, spdu: Option<u8>, to_server: bool) {
         match role(&apdu) {
             Role::Request(key) => {
                 let c = classify_request(&apdu, &self.transfer_sets);
                 let tx = self.new_tx(to_server);
-                tx.spdu = Some(spdu);
+                tx.spdu = spdu;
                 tx.key = Some(key);
                 tx.request = Some(apdu);
                 tx.apply(c);
@@ -525,7 +525,7 @@ impl MmsState {
                         // Orphan response, e.g. the request was before the capture started.
                         let tx = self.new_tx(!to_server);
                         tx.single_message(to_server);
-                        tx.spdu = Some(spdu);
+                        tx.spdu = spdu;
                         self.transactions.len() - 1
                     }
                 };
@@ -542,7 +542,7 @@ impl MmsState {
                 let c = classify_request(&apdu, &self.transfer_sets);
                 let tx = self.new_tx(to_server);
                 tx.single_message(to_server);
-                tx.spdu = Some(spdu);
+                tx.spdu = spdu;
                 tx.request = Some(apdu);
                 tx.complete = true;
                 tx.apply(c);
@@ -555,13 +555,13 @@ impl MmsState {
             Ok(msg) if msg.apdus.is_empty() => {
                 // Session-level abort/refuse without user data.
                 match msg.spdu {
-                    SPDU_AB => self.event_tx(to_server, MmsEvent::Abort),
-                    SPDU_RF => self.event_tx(to_server, MmsEvent::AssociationRejected),
+                    Some(SPDU_AB) => self.event_tx(to_server, MmsEvent::Abort),
+                    Some(SPDU_RF) => self.event_tx(to_server, MmsEvent::AssociationRejected),
                     _ => {}
                 }
                 if let Some(tx) = self.transactions.back_mut() {
                     if tx.spdu.is_none() {
-                        tx.spdu = Some(msg.spdu);
+                        tx.spdu = msg.spdu;
                     }
                 }
             }
@@ -615,7 +615,14 @@ impl MmsState {
                     let consumed = input.len() - start.len();
                     return AppLayerResult::incomplete(consumed as u32, needed as u32);
                 }
-                TpktFrame::Invalid => return AppLayerResult::err(),
+                // A malformed TPKT can't be resynchronised, but it must not
+                // disable inspection of the whole flow (e.g. of the other,
+                // well-formed direction). Flag it and drop the rest of this
+                // slice instead of erroring the flow.
+                TpktFrame::Invalid => {
+                    self.event_tx(to_server, MmsEvent::MalformedPdu);
+                    return AppLayerResult::ok();
+                }
             };
             let frame = &start[..len];
             let _ = Frame::new(
@@ -654,7 +661,7 @@ unsafe extern "C" fn mms_probing_parser(
     }
     let slice = build_slice!(input, input_len as usize);
     match probe_iso102(slice) {
-        Iso102Probe::Detected(Iso102Payload::IsoSession) => ALPROTO_MMS,
+        Iso102Probe::Detected(Iso102Payload::IsoSession | Iso102Payload::MmsDirect) => ALPROTO_MMS,
         Iso102Probe::NeedMore => ALPROTO_UNKNOWN,
         _ => ALPROTO_FAILED,
     }
@@ -841,19 +848,27 @@ mod tests {
     #[test]
     fn test_request_response_pairing() {
         let mut s = MmsState::new();
-        s.handle_apdu(request(1, SVC_READ, vec![obj("LD0", "A")]), SPDU_DT, true);
-        s.handle_apdu(request(2, SVC_READ, vec![obj("LD0", "B")]), SPDU_DT, true);
+        s.handle_apdu(
+            request(1, SVC_READ, vec![obj("LD0", "A")]),
+            Some(SPDU_DT),
+            true,
+        );
+        s.handle_apdu(
+            request(2, SVC_READ, vec![obj("LD0", "B")]),
+            Some(SPDU_DT),
+            true,
+        );
         assert_eq!(s.transactions.len(), 2);
         assert!(s.transactions.iter().all(|t| !t.complete));
         // Responses out of order, matched by invoke ID and direction.
-        s.handle_apdu(Apdu::Mms(response(2, SVC_READ)), SPDU_DT, false);
+        s.handle_apdu(Apdu::Mms(response(2, SVC_READ)), Some(SPDU_DT), false);
         assert!(!s.transactions[0].complete);
         assert!(s.transactions[1].complete);
         // A response in the request's own direction does not complete it.
-        s.handle_apdu(Apdu::Mms(response(1, SVC_READ)), SPDU_DT, true);
+        s.handle_apdu(Apdu::Mms(response(1, SVC_READ)), Some(SPDU_DT), true);
         assert!(!s.transactions[0].complete);
         assert_eq!(s.transactions.len(), 3);
-        s.handle_apdu(Apdu::Mms(response(1, SVC_READ)), SPDU_DT, false);
+        s.handle_apdu(Apdu::Mms(response(1, SVC_READ)), Some(SPDU_DT), false);
         assert!(s.transactions[0].complete);
         assert_eq!(s.transactions[0].service(), Some(SVC_READ));
     }
@@ -863,7 +878,7 @@ mod tests {
         let mut s = MmsState::new();
         s.handle_apdu(
             request(3, SVC_WRITE, vec![obj("LD0", "GGIO1$CO$SPCSO1$Oper")]),
-            SPDU_DT,
+            Some(SPDU_DT),
             true,
         );
         let tx = &s.transactions[0];
@@ -872,7 +887,7 @@ mod tests {
         // Report control block writes are configuration, not process changes.
         s.handle_apdu(
             request(4, SVC_WRITE, vec![obj("LD0", "LLN0$RP$EventsRCB01$RptEna")]),
-            SPDU_DT,
+            Some(SPDU_DT),
             true,
         );
         let tx = &s.transactions[1];
@@ -889,24 +904,24 @@ mod tests {
                 SVC_READ,
                 vec![obj("KIRKLAND", ICCP_NEXT_DS_TRANSFER_SET)],
             ),
-            SPDU_DT,
+            Some(SPDU_DT),
             true,
         );
         let mut resp = response(10, SVC_READ);
         resp.transfer_set = Some((Some("KIRKLAND".into()), "CITEC_TS0".into()));
-        s.handle_apdu(Apdu::Mms(resp), SPDU_DT, false);
+        s.handle_apdu(Apdu::Mms(resp), Some(SPDU_DT), false);
         assert_eq!(s.transfer_sets.len(), 1);
 
         s.handle_apdu(
             request(11, SVC_WRITE, vec![obj("KIRKLAND", "CITEC_TS0")]),
-            SPDU_DT,
+            Some(SPDU_DT),
             true,
         );
         assert!(s.transactions.back().unwrap().iccp_transfer_set);
         // Same name in another domain is a different object.
         s.handle_apdu(
             request(12, SVC_WRITE, vec![obj("BELLEVUE", "CITEC_TS0")]),
-            SPDU_DT,
+            Some(SPDU_DT),
             true,
         );
         assert!(!s.transactions.back().unwrap().iccp_transfer_set);
@@ -917,19 +932,19 @@ mod tests {
         let mut s = MmsState::new();
         s.handle_apdu(
             request(1, SVC_READ, vec![obj("LD0", "Other")]),
-            SPDU_DT,
+            Some(SPDU_DT),
             true,
         );
         let mut resp = response(1, SVC_READ);
         resp.transfer_set = Some((Some("LD0".into()), "X".into()));
-        s.handle_apdu(Apdu::Mms(resp), SPDU_DT, false);
+        s.handle_apdu(Apdu::Mms(resp), Some(SPDU_DT), false);
         assert!(s.transfer_sets.is_empty());
     }
 
     #[test]
     fn test_orphan_response_and_single() {
         let mut s = MmsState::new();
-        s.handle_apdu(Apdu::Mms(response(99, SVC_READ)), SPDU_DT, false);
+        s.handle_apdu(Apdu::Mms(response(99, SVC_READ)), Some(SPDU_DT), false);
         let tx = &s.transactions[0];
         assert!(tx.complete && tx.request.is_none());
         assert!(tx.request_to_server);
@@ -939,7 +954,7 @@ mod tests {
                 service: Some(0),
                 ..Default::default()
             }),
-            SPDU_DT,
+            Some(SPDU_DT),
             false,
         );
         let tx = &s.transactions[1];
@@ -1021,8 +1036,8 @@ mod tests {
     #[test]
     fn test_reject_and_cancel_error_close_their_request() {
         let mut s = MmsState::new();
-        s.handle_apdu(request(5, SVC_READ, vec![]), SPDU_DT, true);
-        s.handle_apdu(mms(PDU_REJECT, 5), SPDU_DT, false);
+        s.handle_apdu(request(5, SVC_READ, vec![]), Some(SPDU_DT), true);
+        s.handle_apdu(mms(PDU_REJECT, 5), Some(SPDU_DT), false);
         assert_eq!(s.transactions.len(), 1);
         assert!(s.transactions[0].complete);
         assert!(matches!(
@@ -1038,8 +1053,8 @@ mod tests {
                 .contains(&MmsEvent::Reject)
         );
 
-        s.handle_apdu(mms(PDU_CANCEL_REQUEST, 9), SPDU_DT, true);
-        s.handle_apdu(mms(PDU_CANCEL_ERROR, 9), SPDU_DT, false);
+        s.handle_apdu(mms(PDU_CANCEL_REQUEST, 9), Some(SPDU_DT), true);
+        s.handle_apdu(mms(PDU_CANCEL_ERROR, 9), Some(SPDU_DT), false);
         assert_eq!(s.transactions.len(), 2);
         assert!(s.transactions[1].complete);
     }
@@ -1047,8 +1062,8 @@ mod tests {
     #[test]
     fn test_gap_closes_requests_awaiting_that_direction() {
         let mut s = MmsState::new();
-        s.handle_apdu(request(1, SVC_READ, vec![]), SPDU_DT, true);
-        s.handle_apdu(request(2, SVC_READ, vec![]), SPDU_DT, false);
+        s.handle_apdu(request(1, SVC_READ, vec![]), Some(SPDU_DT), true);
+        s.handle_apdu(request(2, SVC_READ, vec![]), Some(SPDU_DT), false);
         // Gap in the to-client direction: the response to request 1 may be lost.
         s.on_gap(false);
         assert!(s.transactions[0].complete);
@@ -1059,7 +1074,7 @@ mod tests {
     fn test_transaction_limit_closes_pending_once() {
         let mut s = MmsState::new();
         for id in 0..10 {
-            s.handle_apdu(request(id, SVC_READ, vec![]), SPDU_DT, true);
+            s.handle_apdu(request(id, SVC_READ, vec![]), Some(SPDU_DT), true);
         }
         s.close_pending(true);
         assert_eq!(s.transactions.len(), 11);

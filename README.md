@@ -407,8 +407,9 @@ Example EVE record (single command, execute ON):
 
 The `mms` app-layer parser handles MMS (ISO 9506) over the OSI stack on
 TCP/102: TPKT, COTP (with DT reassembly), ISO 8327 session, ISO 8823
-presentation, ACSE and MMS. It covers IEC 61850 client/server traffic and
-ICCP / TASE.2 between control centres. S7comm and MMS share port 102;
+presentation, ACSE and MMS. It also handles MMS carried directly on COTP
+(reduced stack), as some tools and scanners send it. It covers IEC 61850
+client/server traffic and ICCP / TASE.2 between control centres. S7comm and MMS share port 102;
 protocol detection looks at the first COTP DT payload, so each flow goes to
 the right parser. See [`doc/mms-keywords.rst`](doc/mms-keywords.rst) for full
 details.
@@ -503,6 +504,7 @@ rules, and output assertions:
 | `mms-file-segmented` | File read whose response spans several COTP DTs (reassembly) |
 | `mms-max-message-size` | Oversized reassembled message raises `message_too_large` and is skipped |
 | `mms-auth` | ACSE password authentication detected without logging the password |
+| `mms-reduced-stack` | MMS carried directly on COTP (no session/presentation/ACSE) is detected and decoded |
 | `iec104-commands` | IEC-104 STARTDT/GI/control commands vs. shipped `iec104.rules`, `iec104.dangerous`, EVE decoding |
 | `iec104-sq` | IEC-104 SQ=1 ASDUs, multiple APDUs per segment, no false positives |
 
