@@ -1,0 +1,45 @@
+requires:
+  min-version: 8.0.0
+  # Absolute path to libsuricata_s7comm.so (it also provides the mms parser).
+  # The test is skipped when this is not set.
+  env:
+    - SURICATA_ICS_PLUGIN
+
+# Run with the shipped rules/mms.rules so the test guards the real ruleset.
+command: |
+  ${SRCDIR}/src/suricata --init-errors-fatal -k none \
+      --set plugins.0="${SURICATA_ICS_PLUGIN}" \
+      --set classification-file="${SRCDIR}/etc/classification.config" \
+      --set reference-config-file="${SRCDIR}/etc/reference.config" \
+      -c "${TEST_DIR}/suricata.yaml" -l "${OUTPUT_DIR}" \
+      -r "${TEST_DIR}/input.pcap" -S "${TEST_DIR}/../../rules/mms.rules"
+
+checks:
+  # The 20 KB FileRead response spans several COTP DTs and is reassembled.
+  - filter:
+      count: 1
+      match:
+        event_type: mms
+        mms.request.service: fileRead
+        mms.response.pdu_type: confirmed_response
+        mms.response.service: fileRead
+  - filter:
+      count: 1
+      match:
+        event_type: mms
+        mms.request.service: fileOpen
+        mms.request.files[0]: firmware.bin
+  - filter:
+      count: 0
+      match:
+        event_type: anomaly
+        anomaly.event: message_too_large
+  - filter:
+      count: 1
+      match:
+        event_type: alert
+  - filter:
+      count: 1
+      match:
+        event_type: alert
+        alert.signature_id: 3702053

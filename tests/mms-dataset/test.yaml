@@ -1,0 +1,54 @@
+requires:
+  min-version: 8.0.0
+  # Absolute path to libsuricata_s7comm.so (it also provides the mms parser).
+  # The test is skipped when this is not set.
+  env:
+    - SURICATA_ICS_PLUGIN
+
+# Run with the shipped rules/mms.rules so the test guards the real ruleset.
+command: |
+  ${SRCDIR}/src/suricata --init-errors-fatal -k none \
+      --set plugins.0="${SURICATA_ICS_PLUGIN}" \
+      --set classification-file="${SRCDIR}/etc/classification.config" \
+      --set reference-config-file="${SRCDIR}/etc/reference.config" \
+      -c "${TEST_DIR}/suricata.yaml" -l "${OUTPUT_DIR}" \
+      -r "${TEST_DIR}/input.pcap" -S "${TEST_DIR}/../../rules/mms.rules"
+
+checks:
+  - filter:
+      count: 2
+      match:
+        event_type: alert
+  - filter:
+      count: 1
+      match:
+        event_type: alert
+        alert.signature_id: 3702030
+  - filter:
+      count: 1
+      match:
+        event_type: alert
+        alert.signature_id: 3702031
+
+  # The data set name and its four members are logged
+  - filter:
+      count: 1
+      match:
+        event_type: mms
+        mms.request.service: defineNamedVariableList
+        mms.request.objects[0].item: "LLN0$AnalogueValues"
+        mms.request.members.__len: 4
+        mms.request.members[0].item: "GGIO1$MX$AnIn1"
+        mms.is_dangerous: false
+  - filter:
+      count: 1
+      match:
+        event_type: mms
+        mms.request.service: deleteNamedVariableList
+        mms.request.objects[0].item: "LLN0$AnalogueValues"
+        mms.is_dangerous: true
+  - filter:
+      count: 2
+      match:
+        event_type: anomaly
+        anomaly.event: data_set_change

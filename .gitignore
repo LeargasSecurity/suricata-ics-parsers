@@ -12,3 +12,6 @@ target/
 
 # Local ICS test captures (not redistributed)
 /pcap/
+
+# suricata-verify run.py output
+/tests/*/output/

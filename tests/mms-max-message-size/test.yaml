@@ -1,0 +1,40 @@
+requires:
+  min-version: 8.0.0
+  # Absolute path to libsuricata_s7comm.so (it also provides the mms parser).
+  # The test is skipped when this is not set.
+  env:
+    - SURICATA_ICS_PLUGIN
+
+# Run with the shipped rules/mms.rules so the test guards the real ruleset.
+command: |
+  ${SRCDIR}/src/suricata --init-errors-fatal -k none \
+      --set plugins.0="${SURICATA_ICS_PLUGIN}" \
+      --set classification-file="${SRCDIR}/etc/classification.config" \
+      --set reference-config-file="${SRCDIR}/etc/reference.config" \
+      -c "${TEST_DIR}/suricata.yaml" -l "${OUTPUT_DIR}" \
+      -r "${TEST_DIR}/../mms-file-segmented/input.pcap" -S "${TEST_DIR}/../../rules/mms.rules"
+
+checks:
+  # max-message-size is 4096: the 20 KB FileRead response is dropped with
+  # message_too_large; everything before and after it is still parsed.
+  - filter:
+      count: 1
+      match:
+        event_type: anomaly
+        anomaly.event: message_too_large
+  - filter:
+      count: 1
+      match:
+        event_type: alert
+        alert.signature_id: 3702301
+  - filter:
+      count: 0
+      match:
+        event_type: mms
+        mms.response.service: fileRead
+  - filter:
+      count: 1
+      match:
+        event_type: mms
+        mms.request.service: fileClose
+        mms.response.pdu_type: confirmed_response

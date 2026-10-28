@@ -1,0 +1,86 @@
+requires:
+  min-version: 8.0.0
+  # Absolute path to libsuricata_s7comm.so (it also provides the mms parser).
+  # The test is skipped when this is not set.
+  env:
+    - SURICATA_ICS_PLUGIN
+
+# Run with the shipped rules/mms.rules so the test guards the real ruleset.
+command: |
+  ${SRCDIR}/src/suricata --init-errors-fatal -k none \
+      --set plugins.0="${SURICATA_ICS_PLUGIN}" \
+      --set classification-file="${SRCDIR}/etc/classification.config" \
+      --set reference-config-file="${SRCDIR}/etc/reference.config" \
+      -c "${TEST_DIR}/suricata.yaml" -l "${OUTPUT_DIR}" \
+      -r "${TEST_DIR}/input.pcap" -S "${TEST_DIR}/../../rules/mms.rules"
+
+checks:
+  # Exactly the expected alerts: identify and name-list reconnaissance by both
+  # control centres, and the four transfer set configurations.
+  - filter:
+      count: 13
+      match:
+        event_type: alert
+  - filter:
+      count: 7
+      match:
+        event_type: alert
+        alert.signature_id: 3702010
+  - filter:
+      count: 2
+      match:
+        event_type: alert
+        alert.signature_id: 3702011
+  - filter:
+      count: 4
+      match:
+        event_type: alert
+        alert.signature_id: 3702032
+
+  # ICCP association: TASE.2 application context and bilateral AP titles
+  - filter:
+      count: 1
+      match:
+        event_type: mms
+        mms.request.acse: aarq
+        mms.request.application_context: "1.0.9506.1.1"
+        mms.request.calling_ap_title: "1.1.1"
+        mms.request.called_ap_title: "1.1.2"
+        mms.response.result: accepted
+
+  # Transfer set names are learned from Next_DSTransfer_Set reads, then the
+  # writes to them are flagged, in both directions.
+  - filter:
+      count: 4
+      match:
+        event_type: mms
+        mms.iccp_transfer_set: true
+  - filter:
+      count: 1
+      match:
+        event_type: mms
+        mms.request.service: write
+        mms.request.objects[0].domain: KIRKLAND
+        mms.request.objects[0].item: CITEC_TS0
+        mms.iccp_transfer_set: true
+  - filter:
+      count: 2
+      match:
+        event_type: mms
+        mms.request.direction: to_client
+        mms.request.service: write
+
+  # 23 confirmed request/response pairs, all matched
+  - filter:
+      count: 23
+      match:
+        event_type: mms
+        mms.request.pdu_type: confirmed_request
+        mms.response.pdu_type: confirmed_response
+
+  # Data transfer: InformationReports
+  - filter:
+      count: 115
+      match:
+        event_type: mms
+        mms.request.service: informationReport
