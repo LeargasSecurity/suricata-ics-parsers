@@ -128,10 +128,11 @@ pub enum Apdu {
     Mms(MmsPdu),
 }
 
-/// One session SPDU and the APDUs it carries.
+/// One session SPDU and the APDUs it carries. `spdu` is `None` when the MMS
+/// PDU is carried directly on COTP without the OSI upper layers.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IsoMessage {
-    pub spdu: u8,
+    pub spdu: Option<u8>,
     pub apdus: Vec<Apdu>,
 }
 
@@ -272,8 +273,16 @@ fn ses_user_data(mut params: &[u8]) -> Option<&[u8]> {
     None
 }
 
-/// Decode one TSDU: session SPDU(s), presentation PPDU and the APDUs inside.
+/// Decode one TSDU: either the OSI session/presentation/APDU stack, or an MMS
+/// PDU carried directly on COTP (reduced stack).
 pub fn parse_iso_message(tsdu: &[u8]) -> Result<IsoMessage, IsoError> {
+    // Reduced stack: a BER MMSpdu CHOICE tag directly on COTP, no session layer.
+    if matches!(tsdu.first(), Some(0xA0..=0xAD)) {
+        return Ok(IsoMessage {
+            spdu: None,
+            apdus: vec![parse_apdu(tsdu)?],
+        });
+    }
     let (si, params, rest) = spdu(tsdu).ok_or(IsoError::NotSession)?;
     let user_data = match si {
         // Give Tokens + Data Transfer (basic concatenation); user information follows the DT.
@@ -286,7 +295,7 @@ pub fn parse_iso_message(tsdu: &[u8]) -> Result<IsoMessage, IsoError> {
                 Some(d) => d,
                 None => {
                     return Ok(IsoMessage {
-                        spdu: si,
+                        spdu: Some(si),
                         apdus: Vec::new(),
                     })
                 }
@@ -300,7 +309,10 @@ pub fn parse_iso_message(tsdu: &[u8]) -> Result<IsoMessage, IsoError> {
             apdus.push(parse_apdu(value)?);
         }
     }
-    Ok(IsoMessage { spdu: si, apdus })
+    Ok(IsoMessage {
+        spdu: Some(si),
+        apdus,
+    })
 }
 
 // --- Presentation (ISO 8823) ---
@@ -855,7 +867,7 @@ mod tests {
     #[test]
     fn test_iec61850_control_write() {
         let msg = parse_iso_message(&tsdu(&hex(OPER_WRITE))).unwrap();
-        assert_eq!(msg.spdu, SPDU_DT);
+        assert_eq!(msg.spdu, Some(SPDU_DT));
         let pdu = mms_of(&msg);
         assert_eq!(pdu.pdu_type, PDU_CONFIRMED_REQUEST);
         assert_eq!(pdu.invoke_id, Some(3));
@@ -1015,7 +1027,7 @@ mod tests {
         spdu.extend_from_slice(&params);
 
         let msg = parse_iso_message(&spdu).unwrap();
-        assert_eq!(msg.spdu, SPDU_CN);
+        assert_eq!(msg.spdu, Some(SPDU_CN));
         let Apdu::Acse(a) = &msg.apdus[0] else {
             panic!("expected ACSE")
         };
@@ -1074,6 +1086,28 @@ mod tests {
         assert_eq!(pdu.pdu_type, PDU_CANCEL_ERROR);
         assert_eq!(pdu.invoke_id, Some(6));
         assert_eq!(pdu.error, Some((4, 3)));
+    }
+
+    #[test]
+    fn test_reduced_stack_mms_over_cotp() {
+        // startRequest [40] { programInvocationName [0] "P1" } directly on COTP,
+        // no session/presentation/ACSE. (confirmed-request [0], invoke 1)
+        let msg = parse_iso_message(&hex("a0 0a 02 01 01 bf 28 04 80 02 50 31")).unwrap();
+        assert_eq!(msg.spdu, None);
+        let Apdu::Mms(m) = &msg.apdus[0] else {
+            panic!("expected MMS")
+        };
+        assert_eq!(m.service, Some(SVC_START));
+        assert_eq!(m.names, vec!["P1".to_string()]);
+    }
+
+    #[test]
+    fn test_classify_reduced_stack() {
+        use crate::cotp::{classify_payload, Iso102Payload};
+        assert_eq!(classify_payload(&[0xa0, 0x0a]), Iso102Payload::MmsDirect);
+        assert_eq!(classify_payload(&[0xa8, 0x26]), Iso102Payload::MmsDirect);
+        assert_eq!(classify_payload(&[0xae]), Iso102Payload::Unknown);
+        assert_eq!(classify_payload(&[0x0d]), Iso102Payload::IsoSession);
     }
 
     #[test]
