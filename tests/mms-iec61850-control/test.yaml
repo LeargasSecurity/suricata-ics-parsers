@@ -1,0 +1,82 @@
+requires:
+  min-version: 8.0.0
+  # Absolute path to libsuricata_s7comm.so (it also provides the mms parser).
+  # The test is skipped when this is not set.
+  env:
+    - SURICATA_ICS_PLUGIN
+
+# Run with the shipped rules/mms.rules so the test guards the real ruleset.
+command: |
+  ${SRCDIR}/src/suricata --init-errors-fatal -k none \
+      --set plugins.0="${SURICATA_ICS_PLUGIN}" \
+      --set classification-file="${SRCDIR}/etc/classification.config" \
+      --set reference-config-file="${SRCDIR}/etc/reference.config" \
+      -c "${TEST_DIR}/suricata.yaml" -l "${OUTPUT_DIR}" \
+      -r "${TEST_DIR}/input.pcap" -S "${TEST_DIR}/../../rules/mms.rules"
+
+checks:
+  # Exactly the expected alerts: five Operate and one Select-Before-Operate
+  - filter:
+      count: 6
+      match:
+        event_type: alert
+  - filter:
+      count: 5
+      match:
+        event_type: alert
+        alert.signature_id: 3702020
+  - filter:
+      count: 1
+      match:
+        event_type: alert
+        alert.signature_id: 3702021
+
+  # Association logged with the request and the accepted response together
+  - filter:
+      count: 1
+      match:
+        event_type: mms
+        mms.request.acse: aarq
+        mms.request.application_context: "1.0.9506.2.3"
+        mms.request.initiate.max_pdu_size: 65000
+        mms.response.acse: aare
+        mms.response.result: accepted
+
+  # The first control: request and response in one transaction
+  - filter:
+      count: 1
+      match:
+        event_type: mms
+        mms.request.service: write
+        mms.request.invoke_id: 3
+        mms.request.objects[0].domain: simpleIOGenericIO
+        mms.request.objects[0].item: "GGIO1$CO$SPCSO1$Oper"
+        mms.response.success_count: 1
+        mms.is_dangerous: true
+        mms.attack_technique: "T0855 Unauthorized Command Message"
+
+  # Every control write is dangerous and raises control_operation
+  - filter:
+      count: 6
+      match:
+        event_type: mms
+        mms.is_dangerous: true
+  - filter:
+      count: 6
+      match:
+        event_type: anomaly
+        anomaly.event: control_operation
+
+  # CommandTermination reports from the IED (unconfirmed, server to client)
+  - filter:
+      count: 3
+      match:
+        event_type: mms
+        mms.request.pdu_type: unconfirmed
+        mms.request.direction: to_client
+
+  - filter:
+      count: 1
+      match:
+        event_type: flow
+        app_proto: mms

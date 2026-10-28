@@ -1,0 +1,27 @@
+%YAML 1.1
+---
+# Self-contained config: the plugin is loaded on the command line via
+# --set plugins.0=$SURICATA_ICS_PLUGIN (see test.yaml).
+
+stream:
+  midstream: true
+
+app-layer:
+  protocols:
+    mms:
+      enabled: yes
+      # Smaller than the 20 KB FileRead response, so it is dropped.
+      max-message-size: 4096
+
+outputs:
+  - eve-log:
+      enabled: yes
+      # Smaller than the 20 KB FileRead response, so it is dropped.
+      max-message-size: 4096
+      filetype: regular
+      filename: eve.json
+      types:
+        - alert
+        - anomaly
+        - mms
+        - flow
