@@ -95,7 +95,10 @@ fn log_s7comm(tx: &S7commTransaction, js: &mut SCJsonBuilderWrapper) -> Result<(
         if let Some(gname) = tx.request_userdata_group_name {
             js.set_string("userdata_group_name", gname)?;
         }
-        js.set_uint("userdata_subfunction", tx.request_userdata_subfunction as u64)?;
+        js.set_uint(
+            "userdata_subfunction",
+            tx.request_userdata_subfunction as u64,
+        )?;
     }
 
     // Data item (Read/Write Variable addressing)
@@ -163,7 +166,8 @@ fn log_s7comm(tx: &S7commTransaction, js: &mut SCJsonBuilderWrapper) -> Result<(
 }
 
 pub(crate) unsafe extern "C" fn s7comm_logger_log(
-    tx: *const std::os::raw::c_void, js: *mut std::os::raw::c_void,
+    tx: *const std::os::raw::c_void,
+    js: *mut std::os::raw::c_void,
 ) -> bool {
     let tx = cast_pointer!(tx, S7commTransaction);
     let js = cast_pointer!(js, SCJsonBuilder);

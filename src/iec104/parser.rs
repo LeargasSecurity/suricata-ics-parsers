@@ -72,7 +72,11 @@ fn read_ioa(b: &[u8]) -> u32 {
 
 fn parse_command(type_id: u8, elem: &[u8]) -> Option<Command> {
     // Time-tagged variants (58..=64) share the layout of 45..=51 plus CP56Time2a.
-    let base = if (58..=64).contains(&type_id) { type_id - 13 } else { type_id };
+    let base = if (58..=64).contains(&type_id) {
+        type_id - 13
+    } else {
+        type_id
+    };
     match base {
         C_SC_NA_1 => {
             let q = *elem.first()?;
@@ -171,7 +175,11 @@ fn parse_asdu(data: &[u8]) -> Result<Asdu, ApduError> {
             if sq {
                 if n > 0 && objects.len() >= IOA_LEN {
                     let base = read_ioa(objects);
-                    let fit = if size == 0 { n } else { (objects.len() - IOA_LEN) / size };
+                    let fit = if size == 0 {
+                        n
+                    } else {
+                        (objects.len() - IOA_LEN) / size
+                    };
                     for i in 0..n.min(fit) {
                         asdu.ioas.push(base.wrapping_add(i as u32) & 0x00ff_ffff);
                     }
@@ -294,7 +302,7 @@ mod tests {
         assert!(probe_iec104(STARTDT_ACT));
         assert!(probe_iec104(&[0x68, 0x04, 0x0b, 0x00, 0x00, 0x00])); // STARTDT con
         assert!(probe_iec104(&[0x68, 0x04, 0x01, 0x00, 0x0a, 0x00])); // S-frame
-        // General interrogation I-frame
+                                                                      // General interrogation I-frame
         assert!(probe_iec104(&[
             0x68, 0x0e, 0x00, 0x00, 0x00, 0x00, 0x64, 0x01, 0x06, 0x00, 0x01, 0x00, 0x00, 0x00,
             0x00, 0x14
@@ -303,7 +311,7 @@ mod tests {
         assert!(!probe_iec104(&[0x68, 0x04, 0x0f, 0x00, 0x00, 0x00])); // bad U function
         assert!(!probe_iec104(&[0x68, 0x02, 0x07, 0x00, 0x00, 0x00])); // bad length
         assert!(!probe_iec104(&[0x68, 0x04, 0x07])); // too short
-        // I-frame with unknown type id
+                                                     // I-frame with unknown type id
         assert!(!probe_iec104(&[
             0x68, 0x0e, 0x00, 0x00, 0x00, 0x00, 0xc8, 0x01, 0x06, 0x00, 0x01, 0x00, 0x00, 0x00,
             0x00, 0x14
@@ -406,8 +414,14 @@ mod tests {
 
     #[test]
     fn test_parse_errors() {
-        assert_eq!(parse_apdu(&[0x67, 0x04, 0x07, 0, 0, 0]), Err(ApduError::InvalidStart));
-        assert_eq!(parse_apdu(&[0x68, 0x02, 0x07, 0]), Err(ApduError::InvalidLength));
+        assert_eq!(
+            parse_apdu(&[0x67, 0x04, 0x07, 0, 0, 0]),
+            Err(ApduError::InvalidStart)
+        );
+        assert_eq!(
+            parse_apdu(&[0x68, 0x02, 0x07, 0]),
+            Err(ApduError::InvalidLength)
+        );
         assert_eq!(parse_apdu(&[0x68, 0xff]), Err(ApduError::InvalidLength));
         // I-frame with a truncated ASDU header
         assert_eq!(
@@ -427,8 +441,12 @@ mod tests {
             &[],
             &[0x68],
             &[0x68, 0x04],
-            &[0x68, 0x0a, 0x00, 0x00, 0x00, 0x00, 0x2d, 0xff, 0x06, 0x00, 0x01, 0x00],
-            &[0x68, 0x0a, 0x00, 0x00, 0x00, 0x00, 0x7d, 0x81, 0x0d, 0x00, 0x01, 0x00],
+            &[
+                0x68, 0x0a, 0x00, 0x00, 0x00, 0x00, 0x2d, 0xff, 0x06, 0x00, 0x01, 0x00,
+            ],
+            &[
+                0x68, 0x0a, 0x00, 0x00, 0x00, 0x00, 0x7d, 0x81, 0x0d, 0x00, 0x01, 0x00,
+            ],
             &[0xff; 32],
         ];
         for c in cases {

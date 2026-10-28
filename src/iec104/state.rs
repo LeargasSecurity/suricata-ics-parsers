@@ -243,7 +243,11 @@ impl Iec104State {
     }
 
     fn free_tx(&mut self, tx_id: u64) {
-        if let Some(index) = self.transactions.iter().position(|tx| tx.tx_id == tx_id + 1) {
+        if let Some(index) = self
+            .transactions
+            .iter()
+            .position(|tx| tx.tx_id == tx_id + 1)
+        {
             self.transactions.remove(index);
         }
     }
@@ -269,7 +273,10 @@ impl Iec104State {
     }
 
     fn parse(
-        &mut self, flow: *const Flow, stream_slice: &StreamSlice, to_server: bool,
+        &mut self,
+        flow: *const Flow,
+        stream_slice: &StreamSlice,
+        to_server: bool,
     ) -> AppLayerResult {
         let input = stream_slice.as_slice();
         let mut start = input;
@@ -287,7 +294,10 @@ impl Iec104State {
             let apdu_len = start[1] as usize + 2;
             if start.len() < apdu_len {
                 let consumed = input.len() - start.len();
-                return AppLayerResult::incomplete(consumed as u32, (apdu_len - start.len()) as u32);
+                return AppLayerResult::incomplete(
+                    consumed as u32,
+                    (apdu_len - start.len()) as u32,
+                );
             }
 
             let frame = &start[..apdu_len];
@@ -331,7 +341,10 @@ impl Iec104State {
         let result = parse_apdu(frame);
 
         let mut seq_mismatch = false;
-        if let Ok(Apdu { send_seq: Some(ns), .. }) = result {
+        if let Ok(Apdu {
+            send_seq: Some(ns), ..
+        }) = result
+        {
             let next = if to_server {
                 &mut self.next_send_seq_ts
             } else {
@@ -364,7 +377,11 @@ impl Iec104State {
 // C FFI exports
 
 unsafe extern "C" fn iec104_probing_parser(
-    _flow: *const Flow, _direction: u8, input: *const u8, input_len: u32, _rdir: *mut u8,
+    _flow: *const Flow,
+    _direction: u8,
+    input: *const u8,
+    input_len: u32,
+    _rdir: *mut u8,
 ) -> AppProto {
     if input_len >= 6 && !input.is_null() {
         let slice = build_slice!(input, input_len as usize);
@@ -390,8 +407,11 @@ unsafe extern "C" fn iec104_state_tx_free(state: *mut c_void, tx_id: u64) {
 }
 
 unsafe extern "C" fn iec104_parse_ts(
-    flow: *mut Flow, state: *mut c_void, _pstate: *mut AppLayerParserState,
-    stream_slice: StreamSlice, _data: *const c_void,
+    flow: *mut Flow,
+    state: *mut c_void,
+    _pstate: *mut AppLayerParserState,
+    stream_slice: StreamSlice,
+    _data: *const c_void,
 ) -> AppLayerResult {
     let state = cast_pointer!(state, Iec104State);
     if stream_slice.is_gap() {
@@ -402,8 +422,11 @@ unsafe extern "C" fn iec104_parse_ts(
 }
 
 unsafe extern "C" fn iec104_parse_tc(
-    flow: *mut Flow, state: *mut c_void, _pstate: *mut AppLayerParserState,
-    stream_slice: StreamSlice, _data: *const c_void,
+    flow: *mut Flow,
+    state: *mut c_void,
+    _pstate: *mut AppLayerParserState,
+    stream_slice: StreamSlice,
+    _data: *const c_void,
 ) -> AppLayerResult {
     let state = cast_pointer!(state, Iec104State);
     if stream_slice.is_gap() {
@@ -511,8 +534,8 @@ mod tests {
         feed(
             &mut state,
             &[&[
-                0x68, 0x0e, 0x00, 0x00, 0x00, 0x00, 0x2d, 0x01, 0x06, 0x00, 0x01, 0x00, 0x88,
-                0x13, 0x00, 0x01,
+                0x68, 0x0e, 0x00, 0x00, 0x00, 0x00, 0x2d, 0x01, 0x06, 0x00, 0x01, 0x00, 0x88, 0x13,
+                0x00, 0x01,
             ]],
             true,
         );
@@ -528,8 +551,8 @@ mod tests {
         feed(
             &mut state,
             &[&[
-                0x68, 0x0e, 0x00, 0x00, 0x02, 0x00, 0x2d, 0x01, 0x07, 0x00, 0x01, 0x00, 0x88,
-                0x13, 0x00, 0x01,
+                0x68, 0x0e, 0x00, 0x00, 0x02, 0x00, 0x2d, 0x01, 0x07, 0x00, 0x01, 0x00, 0x88, 0x13,
+                0x00, 0x01,
             ]],
             false,
         );
