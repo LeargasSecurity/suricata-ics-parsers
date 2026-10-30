@@ -4,7 +4,7 @@
 
 use super::consts::*;
 use super::parser::*;
-use super::state::MmsTransaction;
+use super::state::{Missing, MmsTransaction};
 use crate::log::SCJsonBuilderWrapper;
 use suricata::cast_pointer;
 use suricata_sys::jsonbuilder::SCJsonBuilder;
@@ -177,12 +177,32 @@ fn log_tx(tx: &MmsTransaction, js: &mut Js) -> Result<(), ()> {
     if let Some(ref resp) = tx.response {
         log_apdu(js, "response", resp, !tx.request_to_server)?;
     }
-    js.set_bool("is_dangerous", tx.is_dangerous)?;
+    // Danger can't be judged when the request itself was not seen; omit the
+    // flag rather than report a misleading "false".
+    let request_unseen = tx.loss.is_some_and(|l| l.missing != Missing::Response);
+    if !request_unseen {
+        js.set_bool("is_dangerous", tx.is_dangerous)?;
+    }
     if let Some(t) = tx.attack_technique {
         js.set_string("attack_technique", t)?;
     }
     if tx.iccp_transfer_set {
         js.set_bool("iccp_transfer_set", true)?;
+    }
+    if let Some(l) = tx.loss {
+        js.open_object("telemetry")?;
+        js.set_bool("complete", false)?;
+        js.set_string("reason", l.reason.as_str())?;
+        js.set_string("missing", l.missing.as_str())?;
+        js.set_string(
+            "direction",
+            if l.to_server {
+                "to_server"
+            } else {
+                "to_client"
+            },
+        )?;
+        js.close()?;
     }
     js.close()
 }

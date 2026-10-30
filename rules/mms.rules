@@ -250,3 +250,22 @@ alert mms any any -> any any (msg:"MMS Reject PDU (peer could not decode a PDU)"
     classtype:protocol-command-decode; \
     metadata:attack_target ICS, mitre_attack_technique T0814; \
     sid:3702303; rev:1;)
+
+# ============================================================================
+# Missing telemetry: data in an MMS flow was not observed. Absence of MMS
+# events around these is NOT evidence of inactivity. Records carry
+# mms.telemetry {complete: false, reason, missing, direction}.
+# ============================================================================
+
+# TCP data missing from an MMS flow (capture loss or sensor overload).
+alert mms any any -> any any (msg:"MMS TELEMETRY Stream gap in MMS flow (data not observed)"; \
+    app-layer-event:mms.stream_gap; \
+    classtype:protocol-command-decode; \
+    sid:3702304; rev:1;)
+
+# A response arrived for a request that was never seen: the request (which
+# may have been a control) was lost in a gap or predates the capture.
+alert mms any any -> any any (msg:"MMS TELEMETRY Response without observed request"; \
+    app-layer-event:mms.orphan_response; \
+    classtype:protocol-command-decode; \
+    sid:3702305; rev:1;)
