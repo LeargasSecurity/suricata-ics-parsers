@@ -14,7 +14,8 @@ use std::os::raw::{c_char, c_int, c_void};
 use suricata::applayer::{
     state_get_tx_iterator, AppLayerEvent, AppLayerFrameType, AppLayerRegisterParser,
     AppLayerRegisterProtocolDetection, AppLayerResult, AppLayerStateData, AppLayerTxData,
-    RustParser, State, StreamSlice, Transaction, APP_LAYER_PARSER_OPT_ACCEPT_GAPS,
+    RustParser, State, StreamSlice, Transaction, APP_LAYER_PARSER_EOF_TC, APP_LAYER_PARSER_EOF_TS,
+    APP_LAYER_PARSER_OPT_ACCEPT_GAPS,
 };
 use suricata::conf::conf_get;
 use suricata::core::{ALPROTO_FAILED, ALPROTO_UNKNOWN, IPPROTO_TCP, STREAM_TOSERVER};
@@ -25,7 +26,8 @@ use suricata::{
 };
 use suricata_sys::sys::{
     AppLayerParserState, AppProto, Flow, SCAppLayerParserConfParserEnabled,
-    SCAppLayerParserRegisterLogger, SCAppLayerProtoDetectConfProtoDetectionEnabled,
+    SCAppLayerParserRegisterLogger, SCAppLayerParserStateIssetFlag,
+    SCAppLayerProtoDetectConfProtoDetectionEnabled,
 };
 
 pub(crate) static mut ALPROTO_MMS: AppProto = ALPROTO_UNKNOWN;
@@ -95,6 +97,10 @@ pub(crate) enum MmsEvent {
     JournalChange,
     Reject,
     Abort,
+    /// Data missing from the TCP stream of an MMS flow.
+    StreamGap,
+    /// A response whose request was never seen.
+    OrphanResponse,
 }
 
 /// How a response is matched to its request.
@@ -332,7 +338,66 @@ pub(crate) struct MmsTransaction {
     pub is_dangerous: bool,
     pub attack_technique: Option<&'static str>,
     pub iccp_transfer_set: bool,
+    /// Set when part of this exchange was not observed or could not be decoded.
+    pub loss: Option<TelemetryLoss>,
     tx_data: AppLayerTxData,
+}
+
+/// Why telemetry for a transaction is incomplete.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LossReason {
+    /// Data missing from the TCP stream (capture loss or sensor overload).
+    StreamGap,
+    /// A reassembled message exceeded max-message-size and was skipped.
+    MessageTooLarge,
+    /// Closed at the max-tx limit before a response arrived.
+    MaxTx,
+    /// A response arrived for a request that was never seen.
+    RequestNotSeen,
+    /// The message could not be decoded.
+    Malformed,
+    /// The connection ended before a response arrived.
+    ConnectionClosed,
+}
+
+impl LossReason {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::StreamGap => "stream_gap",
+            Self::MessageTooLarge => "message_too_large",
+            Self::MaxTx => "max_tx",
+            Self::RequestNotSeen => "request_not_seen",
+            Self::Malformed => "malformed",
+            Self::ConnectionClosed => "connection_closed",
+        }
+    }
+}
+
+/// Which part of the exchange is missing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Missing {
+    Request,
+    Response,
+    /// One message (or part of one) of unknown type.
+    Message,
+}
+
+impl Missing {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Request => "request",
+            Self::Response => "response",
+            Self::Message => "message",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct TelemetryLoss {
+    pub reason: LossReason,
+    pub missing: Missing,
+    /// Direction of the data that is missing.
+    pub to_server: bool,
 }
 
 impl Transaction for MmsTransaction {
@@ -354,6 +419,7 @@ impl MmsTransaction {
             is_dangerous: false,
             attack_technique: None,
             iccp_transfer_set: false,
+            loss: None,
             tx_data: AppLayerTxData::new(),
         }
     }
@@ -418,6 +484,16 @@ pub(crate) struct MmsState {
     transfer_sets: Vec<(Option<String>, String)>,
     /// Transaction count at which to next close pending requests (see parse()).
     limit_check_at: usize,
+    /// A stream gap has occurred in this direction at some point.
+    gap_seen_ts: bool,
+    gap_seen_tc: bool,
+    /// A gap occurred and no message has decoded since: a decode failure now
+    /// is the remainder of a message cut by the gap, not a malformed PDU.
+    after_gap_ts: bool,
+    after_gap_tc: bool,
+    /// A message in this direction was dropped for exceeding max-message-size.
+    oversize_seen_ts: bool,
+    oversize_seen_tc: bool,
 }
 
 impl State<MmsTransaction> for MmsState {
@@ -458,10 +534,83 @@ impl MmsState {
 
     /// A complete transaction carrying only an event.
     fn event_tx(&mut self, to_server: bool, event: MmsEvent) {
+        self.record_tx(to_server, Some(event), None);
+    }
+
+    /// A complete single-direction transaction recording an event and/or a
+    /// telemetry loss for data in direction `to_server`.
+    fn record_tx(
+        &mut self,
+        to_server: bool,
+        event: Option<MmsEvent>,
+        loss: Option<(LossReason, Missing)>,
+    ) {
         let tx = self.new_tx(to_server);
         tx.single_message(to_server);
         tx.complete = true;
-        tx.set_event(event);
+        if let Some(e) = event {
+            tx.set_event(e);
+        }
+        tx.loss = loss.map(|(reason, missing)| TelemetryLoss {
+            reason,
+            missing,
+            to_server,
+        });
+    }
+
+    fn after_gap(&mut self, to_server: bool) -> &mut bool {
+        if to_server {
+            &mut self.after_gap_ts
+        } else {
+            &mut self.after_gap_tc
+        }
+    }
+
+    /// A message in this direction could not be framed or decoded. Right
+    /// after a stream gap that is the remainder of a message cut by the gap,
+    /// already reported by the gap's own record; otherwise it is malformed.
+    fn undecodable(&mut self, to_server: bool) {
+        if !*self.after_gap(to_server) {
+            self.record_tx(
+                to_server,
+                Some(MmsEvent::MalformedPdu),
+                Some((LossReason::Malformed, Missing::Message)),
+            );
+        }
+    }
+
+    /// Most likely reason a response travelling in `to_server` was not seen
+    /// by the time the connection ended.
+    fn unanswered_reason(&self, to_server: bool) -> LossReason {
+        let (oversize, gap) = if to_server {
+            (self.oversize_seen_ts, self.gap_seen_ts)
+        } else {
+            (self.oversize_seen_tc, self.gap_seen_tc)
+        };
+        if oversize {
+            LossReason::MessageTooLarge
+        } else if gap {
+            LossReason::StreamGap
+        } else {
+            LossReason::ConnectionClosed
+        }
+    }
+
+    /// Close pending requests whose response would travel in direction
+    /// `to_server`, marking the response as missing for `reason`.
+    fn close_awaiting(&mut self, to_server: bool, reason: LossReason) {
+        for tx in self.transactions.iter_mut() {
+            if !tx.complete && tx.request_to_server != to_server {
+                tx.complete = true;
+                if tx.loss.is_none() {
+                    tx.loss = Some(TelemetryLoss {
+                        reason,
+                        missing: Missing::Response,
+                        to_server,
+                    });
+                }
+            }
+        }
     }
 
     /// Drop partial messages, and close requests whose response would have
@@ -469,14 +618,25 @@ impl MmsState {
     fn on_gap(&mut self, to_server: bool) {
         if to_server {
             self.reassembly_ts.reset();
+            self.gap_seen_ts = true;
         } else {
             self.reassembly_tc.reset();
+            self.gap_seen_tc = true;
         }
-        for tx in self.transactions.iter_mut() {
-            if !tx.complete && tx.request_to_server != to_server {
-                tx.complete = true;
-            }
-        }
+        *self.after_gap(to_server) = true;
+        self.close_awaiting(to_server, LossReason::StreamGap);
+        self.record_tx(
+            to_server,
+            Some(MmsEvent::StreamGap),
+            Some((LossReason::StreamGap, Missing::Message)),
+        );
+    }
+
+    /// The stream in direction `to_server` has ended: responses that would
+    /// travel that way can no longer arrive.
+    fn on_close(&mut self, to_server: bool) {
+        let reason = self.unanswered_reason(to_server);
+        self.close_awaiting(to_server, reason);
     }
 
     /// At the transaction limit, close every pending request so it can be
@@ -484,7 +644,14 @@ impl MmsState {
     /// too_many_transactions once.
     fn close_pending(&mut self, to_server: bool) {
         for tx in self.transactions.iter_mut() {
-            tx.complete = true;
+            if !tx.complete {
+                tx.complete = true;
+                tx.loss = Some(TelemetryLoss {
+                    reason: LossReason::MaxTx,
+                    missing: Missing::Response,
+                    to_server: !tx.request_to_server,
+                });
+            }
         }
         self.event_tx(to_server, MmsEvent::TooManyTransactions);
     }
@@ -522,10 +689,26 @@ impl MmsState {
                 let index = match pending {
                     Some(i) => i,
                     None => {
-                        // Orphan response, e.g. the request was before the capture started.
+                        // Orphan response: the request was lost in a gap or
+                        // sent before the capture started.
+                        let gap = if to_server {
+                            self.gap_seen_tc
+                        } else {
+                            self.gap_seen_ts
+                        };
                         let tx = self.new_tx(!to_server);
                         tx.single_message(to_server);
                         tx.spdu = spdu;
+                        tx.set_event(MmsEvent::OrphanResponse);
+                        tx.loss = Some(TelemetryLoss {
+                            reason: if gap {
+                                LossReason::StreamGap
+                            } else {
+                                LossReason::RequestNotSeen
+                            },
+                            missing: Missing::Request,
+                            to_server: !to_server,
+                        });
                         self.transactions.len() - 1
                     }
                 };
@@ -566,11 +749,12 @@ impl MmsState {
                 }
             }
             Ok(msg) => {
+                *self.after_gap(to_server) = false;
                 for apdu in msg.apdus {
                     self.handle_apdu(apdu, msg.spdu, to_server);
                 }
             }
-            Err(_) => self.event_tx(to_server, MmsEvent::MalformedPdu),
+            Err(_) => self.undecodable(to_server),
         }
     }
 
@@ -578,7 +762,7 @@ impl MmsState {
         let cotp = match parse_tpkt_cotp(frame) {
             Ok((_, cotp)) => cotp,
             Err(_) => {
-                self.event_tx(to_server, MmsEvent::MalformedPdu);
+                self.undecodable(to_server);
                 return;
             }
         };
@@ -593,7 +777,18 @@ impl MmsState {
         };
         match reassembly.push(cotp.payload, cotp.eot, max) {
             DtAssembly::Complete(tsdu) if !tsdu.is_empty() => self.handle_tsdu(&tsdu, to_server),
-            DtAssembly::Overflow => self.event_tx(to_server, MmsEvent::MessageTooLarge),
+            DtAssembly::Overflow => {
+                if to_server {
+                    self.oversize_seen_ts = true;
+                } else {
+                    self.oversize_seen_tc = true;
+                }
+                self.record_tx(
+                    to_server,
+                    Some(MmsEvent::MessageTooLarge),
+                    Some((LossReason::MessageTooLarge, Missing::Message)),
+                )
+            }
             _ => {}
         }
     }
@@ -620,7 +815,7 @@ impl MmsState {
                 // well-formed direction). Flag it and drop the rest of this
                 // slice instead of erroring the flow.
                 TpktFrame::Invalid => {
-                    self.event_tx(to_server, MmsEvent::MalformedPdu);
+                    self.undecodable(to_server);
                     return AppLayerResult::ok();
                 }
             };
@@ -684,7 +879,7 @@ unsafe extern "C" fn mms_state_tx_free(state: *mut c_void, tx_id: u64) {
 unsafe extern "C" fn mms_parse_ts(
     flow: *mut Flow,
     state: *mut c_void,
-    _pstate: *mut AppLayerParserState,
+    pstate: *mut AppLayerParserState,
     stream_slice: StreamSlice,
     _data: *const c_void,
 ) -> AppLayerResult {
@@ -693,13 +888,17 @@ unsafe extern "C" fn mms_parse_ts(
         state.on_gap(true);
         return AppLayerResult::ok();
     }
-    state.parse(flow, &stream_slice, true)
+    let result = state.parse(flow, &stream_slice, true);
+    if SCAppLayerParserStateIssetFlag(pstate, APP_LAYER_PARSER_EOF_TS) > 0 {
+        state.on_close(true);
+    }
+    result
 }
 
 unsafe extern "C" fn mms_parse_tc(
     flow: *mut Flow,
     state: *mut c_void,
-    _pstate: *mut AppLayerParserState,
+    pstate: *mut AppLayerParserState,
     stream_slice: StreamSlice,
     _data: *const c_void,
 ) -> AppLayerResult {
@@ -708,7 +907,11 @@ unsafe extern "C" fn mms_parse_tc(
         state.on_gap(false);
         return AppLayerResult::ok();
     }
-    state.parse(flow, &stream_slice, false)
+    let result = state.parse(flow, &stream_slice, false);
+    if SCAppLayerParserStateIssetFlag(pstate, APP_LAYER_PARSER_EOF_TC) > 0 {
+        state.on_close(false);
+    }
+    result
 }
 
 unsafe extern "C" fn mms_state_get_tx(state: *mut c_void, tx_id: u64) -> *mut c_void {
@@ -1090,6 +1293,131 @@ mod tests {
     }
 
     #[test]
+    fn test_gap_marks_lost_responses_and_records_gap() {
+        let mut s = MmsState::new();
+        s.handle_apdu(request(1, SVC_WRITE, vec![]), Some(SPDU_DT), true);
+        s.on_gap(false);
+        let tx = &s.transactions[0];
+        assert!(tx.complete);
+        assert_eq!(
+            tx.loss,
+            Some(TelemetryLoss {
+                reason: LossReason::StreamGap,
+                missing: Missing::Response,
+                to_server: false
+            })
+        );
+        // A record for the gap itself.
+        let gap = s.transactions.back().unwrap();
+        assert!(gap.request.is_none());
+        assert_eq!(gap.loss.unwrap().reason, LossReason::StreamGap);
+        assert_eq!(gap.loss.unwrap().missing, Missing::Message);
+    }
+
+    #[test]
+    fn test_decode_failure_after_gap_is_gap_not_malformed() {
+        let mut s = MmsState::new();
+        s.on_gap(true);
+        let n = s.transactions.len();
+        s.handle_tsdu(b"\x0d\xff", true);
+        // Covered by the gap's own record: no extra record, no malformed_pdu.
+        assert_eq!(s.transactions.len(), n);
+        // The other direction is unaffected.
+        s.handle_tsdu(b"\x0d\xff", false);
+        assert_eq!(
+            s.transactions.back().unwrap().loss.unwrap().reason,
+            LossReason::Malformed
+        );
+    }
+
+    #[test]
+    fn test_after_gap_cleared_by_successful_decode() {
+        let mut s = MmsState::new();
+        s.on_gap(true);
+        // A good message (conclude-Request, reduced stack) clears the gap state.
+        s.handle_tsdu(&[0x8b, 0x00], true);
+        s.handle_tsdu(b"\x0d\xff", true);
+        assert_eq!(
+            s.transactions.back().unwrap().loss.unwrap().reason,
+            LossReason::Malformed
+        );
+    }
+
+    #[test]
+    fn test_orphan_response_reason() {
+        let mut s = MmsState::new();
+        s.handle_apdu(Apdu::Mms(response(7, SVC_WRITE)), Some(SPDU_DT), false);
+        let l = s.transactions.back().unwrap().loss.unwrap();
+        assert_eq!(
+            (l.reason, l.missing, l.to_server),
+            (LossReason::RequestNotSeen, Missing::Request, true)
+        );
+        // After a gap in the request direction the gap explains it.
+        s.on_gap(true);
+        s.handle_apdu(Apdu::Mms(response(8, SVC_WRITE)), Some(SPDU_DT), false);
+        let l = s.transactions.back().unwrap().loss.unwrap();
+        assert_eq!(l.reason, LossReason::StreamGap);
+    }
+
+    #[test]
+    fn test_max_tx_and_close_mark_missing_response() {
+        let mut s = MmsState::new();
+        s.handle_apdu(request(1, SVC_READ, vec![]), Some(SPDU_DT), true);
+        s.handle_apdu(request(2, SVC_READ, vec![]), Some(SPDU_DT), false);
+        // Client side ends: responses to the server's request can't arrive.
+        s.on_close(true);
+        assert!(!s.transactions[0].complete);
+        assert_eq!(
+            s.transactions[1].loss.unwrap().reason,
+            LossReason::ConnectionClosed
+        );
+        s.close_pending(true);
+        let l = s.transactions[0].loss.unwrap();
+        assert_eq!(
+            (l.reason, l.missing, l.to_server),
+            (LossReason::MaxTx, Missing::Response, false)
+        );
+        // A completed exchange is not marked.
+        let mut s = MmsState::new();
+        s.handle_apdu(request(3, SVC_READ, vec![]), Some(SPDU_DT), true);
+        s.handle_apdu(Apdu::Mms(response(3, SVC_READ)), Some(SPDU_DT), false);
+        s.on_close(false);
+        assert_eq!(s.transactions[0].loss, None);
+    }
+
+    #[test]
+    fn test_unanswered_reason_prefers_observed_loss() {
+        let mut s = MmsState::new();
+        s.handle_apdu(request(1, SVC_READ, vec![]), Some(SPDU_DT), true);
+        s.oversize_seen_tc = true;
+        s.on_close(false);
+        assert_eq!(
+            s.transactions[0].loss.unwrap().reason,
+            LossReason::MessageTooLarge
+        );
+    }
+
+    #[test]
+    fn test_oversize_message_records_loss() {
+        let mut s = MmsState::new();
+        let big = vec![0u8; 2 * 1048576];
+        let mut frame = vec![0x03, 0x00, 0x00, 0x00, 0x02, 0xF0, 0x00];
+        frame.extend_from_slice(&big[..60000]);
+        let len = (frame.len() as u16).to_be_bytes();
+        frame[2] = len[0];
+        frame[3] = len[1];
+        // Feed EOT=0 segments until the 1 MB default limit is exceeded.
+        for _ in 0..20 {
+            s.handle_frame(&frame, false);
+        }
+        let l = s.transactions.back().unwrap().loss.unwrap();
+        assert_eq!(
+            (l.reason, l.missing, l.to_server),
+            (LossReason::MessageTooLarge, Missing::Message, false)
+        );
+    }
+
+    #[test]
     fn test_association_rejected() {
         let rejected = |a: &Apdu| {
             classify_response(a)
@@ -1147,7 +1475,7 @@ pub(crate) fn fuzz_feed(data: &[u8]) {
                 input = &input[len..];
             }
             TpktFrame::Invalid => {
-                s.event_tx(to_server, MmsEvent::MalformedPdu);
+                s.undecodable(to_server);
                 break;
             }
             TpktFrame::Incomplete(_) => break,

@@ -183,7 +183,8 @@ App-layer events
 ``setting_change``, ``data_set_change``, ``iccp_transfer_set_write``,
 ``program_control``, ``program_download``, ``program_upload``,
 ``domain_delete``, ``file_delete``, ``file_rename``, ``file_transfer``,
-``journal_change``, ``reject``, ``abort``.
+``journal_change``, ``reject``, ``abort``, ``stream_gap``,
+``orphan_response``.
 
 Request/response transactions are inspected in both directions, so an
 ``app-layer-event`` rule for an event raised on such a transaction matches
@@ -193,7 +194,8 @@ AARE (``flow:to_client``). For the request-side classifications prefer the
 keywords above (``mms.service``, ``mms.item``, ``mms.dangerous``,
 ``mms.iccp_transfer_set``), which match once, and ``mms.pdu_type:reject``
 for rejects. Events on single-message transactions (``malformed_pdu``,
-``message_too_large``, ``too_many_transactions``, ``abort``) match once.
+``message_too_large``, ``too_many_transactions``, ``abort``, ``stream_gap``,
+``orphan_response``) match once.
 
 Example::
 
@@ -222,3 +224,51 @@ and ``response`` (when present), each carrying its ``direction``:
 The transaction also carries ``session`` (the ISO 8327 SPDU type),
 ``is_dangerous``, ``attack_technique`` and, for transfer set writes,
 ``iccp_transfer_set``.
+
+Missing telemetry
+-----------------
+
+No MMS records for a period means no MMS activity *only if nothing was
+lost*. When the parser knows that part of a flow was not observed, it says so
+with a ``telemetry`` object, so missing data does not look like inactivity::
+
+    "telemetry": {"complete": false, "reason": "stream_gap",
+                  "missing": "request", "direction": "to_server"}
+
+``telemetry`` is present only when the record is incomplete. ``missing`` is
+what was not seen (``request``, ``response`` or ``message``); ``direction``
+is the direction the missing data travelled in. ``reason`` is one of:
+
+========================  ====================================================
+Reason                    Meaning
+========================  ====================================================
+``stream_gap``            TCP data was not observed (capture or sensor loss)
+``message_too_large``     A reassembled message exceeded ``max-message-size``
+                          and was dropped
+``max_tx``                The request was closed unanswered to stay within
+                          ``max-tx``
+``request_not_seen``      A response arrived whose request was never observed
+``malformed``             The response could not be decoded
+``connection_closed``     The flow ended with the response still outstanding
+========================  ====================================================
+
+The records an analyst sees:
+
+* A gap gets its own record (``missing: message``, ``reason: stream_gap``)
+  and the ``stream_gap`` event.
+* A request whose response was lost is logged with ``missing: response``
+  and the reason it was lost.
+* A response whose request was lost gets ``missing: request`` and the
+  ``orphan_response`` event. It carries no ``is_dangerous`` field: the
+  operation cannot be classified when the request was not seen. A write
+  response here can be a lost IEC 61850 control.
+* An oversized message gets a record with ``missing: message`` and
+  ``reason: message_too_large`` alongside the ``message_too_large`` event.
+
+Suricata can report a gap to the parser after it has already delivered later
+data in the other direction. An orphan response may then say
+``request_not_seen`` and be followed by the ``stream_gap`` record. Correlate
+both by ``flow_id``.
+
+``rules/mms.rules`` raises an alert for each gap (SID 3702304) and each
+orphan response (SID 3702305).

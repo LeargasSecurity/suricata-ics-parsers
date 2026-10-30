@@ -273,11 +273,18 @@ fn ses_user_data(mut params: &[u8]) -> Option<&[u8]> {
     None
 }
 
+/// First octet of an MMSpdu: context-specific tags [0]..[13]. Constructed for
+/// most PDUs; primitive for cancel-Request/Response ([5]/[6], Unsigned32) and
+/// conclude-Request/Response ([11]/[12], NULL).
+pub fn is_mms_pdu_tag(t: u8) -> bool {
+    matches!(t, 0xA0..=0xAD | 0x85 | 0x86 | 0x8B | 0x8C)
+}
+
 /// Decode one TSDU: either the OSI session/presentation/APDU stack, or an MMS
 /// PDU carried directly on COTP (reduced stack).
 pub fn parse_iso_message(tsdu: &[u8]) -> Result<IsoMessage, IsoError> {
     // Reduced stack: a BER MMSpdu CHOICE tag directly on COTP, no session layer.
-    if matches!(tsdu.first(), Some(0xA0..=0xAD)) {
+    if tsdu.first().is_some_and(|&t| is_mms_pdu_tag(t)) {
         return Ok(IsoMessage {
             spdu: None,
             apdus: vec![parse_apdu(tsdu)?],
@@ -1102,11 +1109,31 @@ mod tests {
     }
 
     #[test]
+    fn test_reduced_stack_primitive_pdus() {
+        // conclude-Request [11] NULL and cancel-Request [5] invokeID 7, directly on COTP.
+        let msg = parse_iso_message(&[0x8b, 0x00]).unwrap();
+        let Apdu::Mms(m) = &msg.apdus[0] else {
+            panic!("expected MMS")
+        };
+        assert_eq!(m.pdu_type, PDU_CONCLUDE_REQUEST);
+        let msg = parse_iso_message(&[0x85, 0x01, 0x07]).unwrap();
+        let Apdu::Mms(m) = &msg.apdus[0] else {
+            panic!("expected MMS")
+        };
+        assert_eq!((m.pdu_type, m.invoke_id), (PDU_CANCEL_REQUEST, Some(7)));
+    }
+
+    #[test]
     fn test_classify_reduced_stack() {
         use crate::cotp::{classify_payload, Iso102Payload};
         assert_eq!(classify_payload(&[0xa0, 0x0a]), Iso102Payload::MmsDirect);
         assert_eq!(classify_payload(&[0xa8, 0x26]), Iso102Payload::MmsDirect);
         assert_eq!(classify_payload(&[0xae]), Iso102Payload::Unknown);
+        // Primitive PDUs: cancel-Request/Response, conclude-Request/Response.
+        for t in [0x85u8, 0x86, 0x8b, 0x8c] {
+            assert_eq!(classify_payload(&[t, 0x00]), Iso102Payload::MmsDirect);
+        }
+        assert_eq!(classify_payload(&[0x87]), Iso102Payload::Unknown);
         assert_eq!(classify_payload(&[0x0d]), Iso102Payload::IsoSession);
     }
 
