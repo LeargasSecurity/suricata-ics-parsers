@@ -441,15 +441,24 @@ either way in ICCP. Frame: `mms.pdu`. App-layer events include
 `control_operation`, `setting_change`, `data_set_change`,
 `iccp_transfer_set_write`, `program_control`, `program_download`,
 `domain_delete`, `file_delete`, `journal_change`, `authentication`,
-`association_rejected`, `reject`, `abort`, `malformed_pdu` and
-`message_too_large`.
+`association_rejected`, `reject`, `abort`, `malformed_pdu`,
+`message_too_large`, `stream_gap` and `orphan_response`.
 
-`rules/mms.rules` (SIDs `3702001–3702303`) covers IEC 61850 controls
+**Missing telemetry.** Data the parser could not observe (a TCP gap, a message
+over `max-message-size`, a request closed unanswered, a response without its
+request) is logged as such, with
+`"telemetry": {"complete": false, "reason": …, "missing": …, "direction": …}`,
+so lost traffic is not mistaken for inactivity. A response without its
+request carries no `is_dangerous` field. See
+[`doc/mms-keywords.rst`](doc/mms-keywords.rst#missing-telemetry).
+
+`rules/mms.rules` (SIDs `3702001–3702305`) covers IEC 61850 controls
 (T0855/T0831), setting and data-set changes (T0836), ICCP transfer set
 configuration (T0836), program control (T0858), domain download/upload
 (T0843/T0845), deletions (T0809), journal clearing (T0872), file transfer
 (T0867/T0882), identify and object enumeration (T0888/T0861), ACSE password
-authentication (T0859), and protocol anomalies.
+authentication (T0859), protocol anomalies, and missing telemetry (stream
+gaps, responses without a request).
 
 Example EVE record (IEC 61850 control, Operate):
 
@@ -508,7 +517,9 @@ rules, and output assertions:
 | `mms-iccp` | ICCP association, transfer set tracking in both directions, reports, recon rules |
 | `mms-dataset` | Data set define (with members) and delete |
 | `mms-file-segmented` | File read whose response spans several COTP DTs (reassembly) |
-| `mms-max-message-size` | Oversized reassembled message raises `message_too_large` and is skipped |
+| `mms-max-message-size` | Oversized reassembled message raises `message_too_large`, is skipped, and is logged as missing telemetry |
+| `mms-telemetry-control-gap` | A control lost in a capture gap: `stream_gap` record and an orphan write response without `is_dangerous` |
+| `mms-telemetry-segment-gap` | A gap inside a segmented response is reported as gap loss, not `malformed_pdu` |
 | `mms-auth` | ACSE password authentication detected without logging the password |
 | `mms-reduced-stack` | MMS carried directly on COTP (no session/presentation/ACSE) is detected and decoded |
 | `iec104-commands` | IEC-104 STARTDT/GI/control commands vs. shipped `iec104.rules`, `iec104.dangerous`, EVE decoding |

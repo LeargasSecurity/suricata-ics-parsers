@@ -1,0 +1,73 @@
+requires:
+  min-version: 8.0.0
+  # Absolute path to libsuricata_ics.so (it provides the s7comm, iec104 and mms parsers).
+  # The test is skipped when this is not set.
+  env:
+    - SURICATA_ICS_PLUGIN
+
+# Run with the shipped rules/mms.rules so the test guards the real ruleset.
+command: |
+  ${SRCDIR}/src/suricata --init-errors-fatal -k none \
+      --set plugins.0="${SURICATA_ICS_PLUGIN}" \
+      --set classification-file="${SRCDIR}/etc/classification.config" \
+      --set reference-config-file="${SRCDIR}/etc/reference.config" \
+      -c "${TEST_DIR}/suricata.yaml" -l "${OUTPUT_DIR}" \
+      -r "${TEST_DIR}/input.pcap" -S "${TEST_DIR}/../../rules/mms.rules"
+
+checks:
+  # The SPCSO1 Oper write (frame 14) is missing from this capture, as after a
+  # capture drop. The loss must be explicit, not look like inactivity.
+
+  # A record for the gap itself, in the request direction
+  - filter:
+      count: 1
+      match:
+        event_type: mms
+        mms.telemetry.complete: false
+        mms.telemetry.reason: stream_gap
+        mms.telemetry.missing: message
+        mms.telemetry.direction: to_server
+
+  # The control's reply arrives without its request: marked, and NOT reported
+  # as a benign (is_dangerous: false) operation
+  - filter:
+      count: 1
+      match:
+        event_type: mms
+        mms.response.service: write
+        mms.response.invoke_id: 3
+        mms.telemetry.complete: false
+        mms.telemetry.missing: request
+        mms.is_dangerous: null
+
+  # Telemetry rules fire once each; the four observed Operates still alert
+  - filter:
+      count: 1
+      match:
+        event_type: alert
+        alert.signature_id: 3702304
+  - filter:
+      count: 1
+      match:
+        event_type: alert
+        alert.signature_id: 3702305
+  - filter:
+      count: 4
+      match:
+        event_type: alert
+        alert.signature_id: 3702020
+  - filter:
+      count: 1
+      match:
+        event_type: anomaly
+        anomaly.event: stream_gap
+  - filter:
+      count: 1
+      match:
+        event_type: anomaly
+        anomaly.event: orphan_response
+  - filter:
+      count: 0
+      match:
+        event_type: anomaly
+        anomaly.event: malformed_pdu

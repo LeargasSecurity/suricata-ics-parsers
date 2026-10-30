@@ -6,6 +6,29 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- MMS: missing-telemetry visibility. Records for data the parser could not
+  observe carry `telemetry` (`complete: false`, `reason`, `missing`,
+  `direction`), so lost traffic is distinguishable from inactivity. Reasons:
+  `stream_gap`, `message_too_large`, `max_tx`, `request_not_seen`,
+  `malformed`, `connection_closed`.
+- MMS: a TCP gap is logged as its own record with the new `stream_gap` event;
+  requests whose response was lost to a gap, an oversized message, `max-tx`
+  or the end of the flow say so.
+- MMS: a response without an observed request raises the new
+  `orphan_response` event and is logged without `is_dangerous`.
+- Rules 3702304 (MMS stream gap) and 3702305 (response without request).
+- suricata-verify tests `mms-telemetry-control-gap` and
+  `mms-telemetry-segment-gap`.
+
+### Fixed
+
+- MMS: a gap inside a segmented message is reported as a stream gap, not
+  `malformed_pdu`.
+- MMS: primitive reduced-stack PDUs (conclude request/response, cancel) were
+  reported as malformed; they are now decoded and detected.
+
 ## [0.2.1] - 2026-10-30
 
 Rebuild for the Suricata 8.0.8 security release. Upgrade Suricata and the

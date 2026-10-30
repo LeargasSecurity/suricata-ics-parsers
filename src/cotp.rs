@@ -235,9 +235,11 @@ pub fn classify_payload(payload: &[u8]) -> Iso102Payload {
         Some(&(0x01 | 0x08 | 0x09 | 0x0A | 0x0C | 0x0D | 0x0E | 0x19 | 0x1A)) => {
             Iso102Payload::IsoSession
         }
-        // Reduced stack: a BER MMSpdu CHOICE tag ([0]..[13], constructed,
-        // context-specific) directly on COTP.
-        Some(&tag) if (0xA0..=0xAD).contains(&tag) => Iso102Payload::MmsDirect,
+        // Reduced stack: a BER MMSpdu CHOICE tag ([0]..[13], context-specific;
+        // primitive for cancel and conclude) directly on COTP.
+        Some(&tag) if matches!(tag, 0xA0..=0xAD | 0x85 | 0x86 | 0x8B | 0x8C) => {
+            Iso102Payload::MmsDirect
+        }
         _ => Iso102Payload::Unknown,
     }
 }
