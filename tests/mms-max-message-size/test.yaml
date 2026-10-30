@@ -38,3 +38,20 @@ checks:
         event_type: mms
         mms.request.service: fileClose
         mms.response.pdu_type: confirmed_response
+
+  # The drop is visible as missing telemetry, and the request whose response
+  # was dropped says why it has no response
+  - filter:
+      count: 1
+      match:
+        event_type: mms
+        mms.telemetry.reason: message_too_large
+        mms.telemetry.missing: message
+        mms.telemetry.direction: to_client
+  - filter:
+      count: 1
+      match:
+        event_type: mms
+        mms.request.service: fileRead
+        mms.telemetry.reason: message_too_large
+        mms.telemetry.missing: response

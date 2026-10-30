@@ -1,0 +1,45 @@
+requires:
+  min-version: 8.0.0
+  # Absolute path to libsuricata_ics.so (it provides the s7comm, iec104 and mms parsers).
+  # The test is skipped when this is not set.
+  env:
+    - SURICATA_ICS_PLUGIN
+
+# Run with the shipped rules/mms.rules so the test guards the real ruleset.
+command: |
+  ${SRCDIR}/src/suricata --init-errors-fatal -k none \
+      --set plugins.0="${SURICATA_ICS_PLUGIN}" \
+      --set classification-file="${SRCDIR}/etc/classification.config" \
+      --set reference-config-file="${SRCDIR}/etc/reference.config" \
+      -c "${TEST_DIR}/suricata.yaml" -l "${OUTPUT_DIR}" \
+      -r "${TEST_DIR}/input.pcap" -S "${TEST_DIR}/../../rules/mms.rules"
+
+checks:
+  # The first 8 KB COTP DT of the 20 KB FileRead response (frame 13) is
+  # missing. The rest of the cut message must be reported as gap loss, not as
+  # a malformed PDU, and the request as missing its response.
+  - filter:
+      count: 1
+      match:
+        event_type: mms
+        mms.telemetry.reason: stream_gap
+        mms.telemetry.missing: message
+        mms.telemetry.direction: to_client
+  - filter:
+      count: 1
+      match:
+        event_type: mms
+        mms.request.service: fileRead
+        mms.telemetry.complete: false
+        mms.telemetry.reason: stream_gap
+        mms.telemetry.missing: response
+  - filter:
+      count: 0
+      match:
+        event_type: anomaly
+        anomaly.event: malformed_pdu
+  - filter:
+      count: 1
+      match:
+        event_type: alert
+        alert.signature_id: 3702304
