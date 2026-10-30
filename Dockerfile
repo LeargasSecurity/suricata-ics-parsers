@@ -6,7 +6,7 @@
 #   docker run --rm -v "$PWD:/data" suricata-ics -r /data/capture.pcap -l /data/out -k none
 #   docker run --rm --net=host suricata-ics -i eth0 -k none
 
-ARG SURICATA_VERSION=8.0.6
+ARG SURICATA_VERSION=8.0.8
 
 # ---------------------------------------------------------------------------
 FROM ubuntu:24.04 AS builder

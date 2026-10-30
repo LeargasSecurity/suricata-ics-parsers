@@ -6,13 +6,13 @@
 # Cargo.toml.in so the build works regardless of where Suricata lives.
 #
 #   make build                 # build against $SURICATA_SRC (default below)
-#   make build SURICATA_SRC=/opt/suricata-8.0.6
+#   make build SURICATA_SRC=/opt/suricata-8.0.8
 #   make test                  # cargo unit tests
 #   make install               # install the .so and rules (needs sudo)
 #   make clean
 
 # Path to the Suricata 8.0.x source tree (must contain rust/ and rust/sys/).
-SURICATA_SRC ?= $(HOME)/suricata-8.0.6
+SURICATA_SRC ?= $(HOME)/suricata-8.0.8
 
 # Derived path to the Rust crates inside the Suricata source tree.
 SURICATA_RUST := $(abspath $(SURICATA_SRC)/rust)
@@ -29,7 +29,7 @@ check-suricata:
 	@test -d "$(SURICATA_RUST)" || { \
 	  echo "ERROR: Suricata Rust crates not found at $(SURICATA_RUST)"; \
 	  echo "       Set SURICATA_SRC to your Suricata 8.0.x source tree, e.g.:"; \
-	  echo "       make build SURICATA_SRC=/opt/suricata-8.0.6"; \
+	  echo "       make build SURICATA_SRC=/opt/suricata-8.0.8"; \
 	  exit 1; }
 
 # Generate Cargo.toml from the template with the resolved Suricata crate path.

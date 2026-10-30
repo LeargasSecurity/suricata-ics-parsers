@@ -21,7 +21,7 @@ body:
       label: Steps to reproduce
       description: Command line, config snippet, and a minimal PCAP if possible.
       placeholder: |
-        1. make build SURICATA_SRC=/opt/suricata-8.0.6
+        1. make build SURICATA_SRC=/opt/suricata-8.0.8
         2. suricata -c suricata.yaml -r sample.pcap -l out -k none
         3. grep s7comm out/eve.json
     validations:
@@ -30,14 +30,14 @@ body:
     id: suricata-version
     attributes:
       label: Suricata version
-      placeholder: "8.0.6"
+      placeholder: "8.0.8"
     validations:
       required: true
   - type: input
     id: plugin-version
     attributes:
       label: Plugin version / commit
-      placeholder: "v0.2.0 or git SHA"
+      placeholder: "v0.2.1 or git SHA"
     validations:
       required: true
   - type: input

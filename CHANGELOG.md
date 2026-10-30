@@ -6,6 +6,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-10-30
+
+Rebuild for the Suricata 8.0.8 security release. Upgrade Suricata and the
+plugin together: the plugin embeds parts of Suricata's Rust code from the
+version it was built against, and Suricata loads a plugin built for another
+release without complaint.
+
+### Added
+- The plugin logs a warning at startup when the running Suricata version
+  differs from the version it was built against (looked up at runtime, so a
+  missing symbol never stops the plugin from loading).
+
+### Changed
+- Built, tested and released against Suricata 8.0.8 (was 8.0.6): CI, the
+  release workflow, the Docker image and the `make` default. No parser or
+  rule changes; 64 captures give identical output on 8.0.6 and 8.0.8.
+
 ## [0.2.0] - 2026-10-28
 
 ### Added
@@ -140,6 +157,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Rust unit tests and four suricata-verify tests (write-var, download, recon-szl,
   auth-password).
 
-[Unreleased]: https://github.com/LeargasSecurity/suricata-ics-parsers/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/LeargasSecurity/suricata-ics-parsers/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/LeargasSecurity/suricata-ics-parsers/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/LeargasSecurity/suricata-ics-parsers/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/LeargasSecurity/suricata-ics-parsers/releases/tag/v0.1.0

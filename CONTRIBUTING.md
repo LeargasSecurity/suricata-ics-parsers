@@ -19,8 +19,8 @@ The plugin links against the Rust crates that ship with a matching **Suricata
 ```bash
 # 1. Obtain and build a matching Suricata source tree (see README).
 # 2. Build the plugin against it:
-make build SURICATA_SRC=/path/to/suricata-8.0.6
-make test  SURICATA_SRC=/path/to/suricata-8.0.6
+make build SURICATA_SRC=/path/to/suricata-8.0.8
+make test  SURICATA_SRC=/path/to/suricata-8.0.8
 ```
 
 `Cargo.toml` is generated from `Cargo.toml.in` by `make configure`; never edit
