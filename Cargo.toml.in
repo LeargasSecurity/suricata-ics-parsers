@@ -1,6 +1,6 @@
 [package]
 name = "suricata-ics-parsers"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 authors = ["Leargas Security"]
 description = "Suricata S7comm/S7comm-plus, IEC 60870-5-104 and MMS/IEC 61850/ICCP ICS protocol parser plugin"

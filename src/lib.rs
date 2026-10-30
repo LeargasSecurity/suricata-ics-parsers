@@ -13,3 +13,4 @@ mod mms;
 mod parser;
 pub mod plugin;
 mod s7comm;
+mod version;

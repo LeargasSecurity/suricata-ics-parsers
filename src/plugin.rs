@@ -20,6 +20,7 @@ use suricata_sys::sys::{
 
 extern "C" fn ics_plugin_init() {
     suricata::plugin::init();
+    crate::version::check_suricata_version();
     SCLogNotice!("Initializing S7comm ICS protocol parser");
     let plugin = SCAppLayerPlugin {
         name: b"s7comm\0".as_ptr() as *const libc::c_char,

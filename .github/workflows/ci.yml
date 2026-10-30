@@ -9,7 +9,7 @@ on:
     - cron: "17 3 * * 1"   # weekly: fuzzing and a fresh Docker build
 
 env:
-  SURICATA_VERSION: "8.0.6"
+  SURICATA_VERSION: "8.0.8"
   CARGO_TERM_COLOR: always
 
 jobs:
@@ -26,7 +26,7 @@ jobs:
         run: rustfmt --edition 2021 --check src/lib.rs
 
   build:
-    name: build & test (Suricata ${{ '' }}8.0.6)
+    name: build & test (Suricata ${{ '' }}8.0.8)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

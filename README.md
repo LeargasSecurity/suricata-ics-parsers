@@ -64,8 +64,8 @@ contains `rust/`) and build with `make` — `Cargo.toml` is generated from
 `Cargo.toml.in`, so nothing needs to be hand-edited:
 
 ```bash
-# Default SURICATA_SRC is $HOME/suricata-8.0.6; override as needed:
-make build SURICATA_SRC=/opt/suricata-8.0.6
+# Default SURICATA_SRC is $HOME/suricata-8.0.8; override as needed:
+make build SURICATA_SRC=/opt/suricata-8.0.8
 ```
 
 The plugin is produced at `target/release/libsuricata_ics.so`.
@@ -73,8 +73,8 @@ The plugin is produced at `target/release/libsuricata_ics.so`.
 Useful targets:
 
 ```bash
-make test     SURICATA_SRC=/opt/suricata-8.0.6   # Rust unit tests
-make install  SURICATA_SRC=/opt/suricata-8.0.6   # install .so + rules (sudo)
+make test     SURICATA_SRC=/opt/suricata-8.0.8   # Rust unit tests
+make install  SURICATA_SRC=/opt/suricata-8.0.8   # install .so + rules (sudo)
 make clean
 ```
 
@@ -107,7 +107,7 @@ docker run --rm --net=host suricata-ics -i eth0 -k none
 
 ```bash
 # Install the plugin shared object and rules (from a build tree):
-sudo make install SURICATA_SRC=/opt/suricata-8.0.6
+sudo make install SURICATA_SRC=/opt/suricata-8.0.8
 
 # ...or manually:
 sudo mkdir -p /usr/local/lib/suricata/plugins
@@ -120,6 +120,12 @@ sudo cp rules/s7comm.rules rules/iec104.rules rules/mms.rules /usr/local/var/lib
 > a `libsuricata_s7comm.so` symlink, so existing `plugins:` entries keep
 > working; point them at `libsuricata_ics.so` when convenient. Protocol names
 > (`s7comm`, `iec104`, `mms`), keywords, EVE types and rules are unchanged.
+
+> **Match the Suricata version:** build (or download) the plugin for the exact
+> Suricata release your sensors run, and upgrade both together. Suricata will
+> load a plugin built for a different release; the plugin then logs a warning
+> such as `ics-parsers plugin was built against Suricata 8.0.6 but is running
+> in Suricata 8.0.8`.
 
 Enable the plugin and protocol in `suricata.yaml`:
 
