@@ -6,6 +6,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-02
+
+MMS records now say when traffic was not observed, so missing telemetry
+(capture gaps, oversized messages, unanswered requests) is distinguishable
+from inactivity. Prebuilt for Suricata 8.0.6 and 8.0.8.
+
 ### Added
 
 - MMS: missing-telemetry visibility. Records for data the parser could not
@@ -22,10 +28,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - suricata-verify tests `mms-telemetry-control-gap` and
   `mms-telemetry-segment-gap`.
 
+### Changed
+
+- MMS EVE: `is_dangerous` is omitted (rather than `false`) when the request
+  or message was not observed (`telemetry.missing` is `request` or
+  `message`). Queries that treat a missing `is_dangerous` as benign should
+  check `telemetry` instead.
+
 ### Fixed
 
 - MMS: a gap inside a segmented message is reported as a stream gap, not
-  `malformed_pdu`.
+  `malformed_pdu`. A gap excuses at most two following decode failures (a
+  cut TPKT and the tail of a cut segmented message), so garbage sent after a
+  gap still raises `malformed_pdu`.
 - MMS: primitive reduced-stack PDUs (conclude request/response, cancel) were
   reported as malformed; they are now decoded and detected.
 
@@ -217,7 +232,8 @@ release without complaint.
 - Rust unit tests and four suricata-verify tests (write-var, download, recon-szl,
   auth-password).
 
-[Unreleased]: https://github.com/LeargasSecurity/suricata-ics-parsers/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/LeargasSecurity/suricata-ics-parsers/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/LeargasSecurity/suricata-ics-parsers/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/LeargasSecurity/suricata-ics-parsers/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/LeargasSecurity/suricata-ics-parsers/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/LeargasSecurity/suricata-ics-parsers/compare/v0.1.0...v0.2.0
