@@ -6,6 +6,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-11-02
+
+Fixes reversed source/destination addresses in the plugin's EVE records.
+Prebuilt libraries are now published for Suricata 8.0.6 and 8.0.8.
+
 ### Fixed
 - EVE `src_ip`/`src_port`/`dest_ip`/`dest_port` on `s7comm`, `iec104` and
   `mms` records could be reversed. The loggers were registered with
@@ -24,6 +29,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `mms-iec61850-control` and `mms-iccp` also replay their capture with
   inline stream handling and check that no record has the server port as
   `src_port`.
+
+### Added
+- `schema/eve-ics.json`: a strict EVE schema for the `s7comm`, `iec104` and
+  `mms` records, and `scripts/eve-schema.py`, which merges it into
+  Suricata's `etc/schema.json`. Suricata's core schema rejects plugin event
+  types, so suricata-verify's own validation cannot be used for them; CI and
+  the release workflow now validate all test output against the merged
+  schema with suricata-verify's `check-eve.py`.
+
+### Changed
+- CI and the release workflow build and test against Suricata 8.0.6 and
+  8.0.8. Each release ships `libsuricata_ics-suricata-<version>.so` and a
+  tarball per version (now including `schema/`), with one `SHA256SUMS`.
 
 ## [0.2.1] - 2026-10-30
 
@@ -176,7 +194,8 @@ release without complaint.
 - Rust unit tests and four suricata-verify tests (write-var, download, recon-szl,
   auth-password).
 
-[Unreleased]: https://github.com/LeargasSecurity/suricata-ics-parsers/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/LeargasSecurity/suricata-ics-parsers/compare/v0.2.2...HEAD
+[0.2.2]: https://github.com/LeargasSecurity/suricata-ics-parsers/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/LeargasSecurity/suricata-ics-parsers/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/LeargasSecurity/suricata-ics-parsers/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/LeargasSecurity/suricata-ics-parsers/releases/tag/v0.1.0
