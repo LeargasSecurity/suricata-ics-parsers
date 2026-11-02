@@ -487,10 +487,10 @@ pub(crate) struct MmsState {
     /// A stream gap has occurred in this direction at some point.
     gap_seen_ts: bool,
     gap_seen_tc: bool,
-    /// A gap occurred and no message has decoded since: a decode failure now
-    /// is the remainder of a message cut by the gap, not a malformed PDU.
-    after_gap_ts: bool,
-    after_gap_tc: bool,
+    /// Decode failures still attributable to the remainder of a message cut by
+    /// the last gap (reset by a successful decode) rather than a malformed PDU.
+    gap_leftovers_ts: u8,
+    gap_leftovers_tc: u8,
     /// A message in this direction was dropped for exceeding max-message-size.
     oversize_seen_ts: bool,
     oversize_seen_tc: bool,
@@ -558,11 +558,11 @@ impl MmsState {
         });
     }
 
-    fn after_gap(&mut self, to_server: bool) -> &mut bool {
+    fn gap_leftovers(&mut self, to_server: bool) -> &mut u8 {
         if to_server {
-            &mut self.after_gap_ts
+            &mut self.gap_leftovers_ts
         } else {
-            &mut self.after_gap_tc
+            &mut self.gap_leftovers_tc
         }
     }
 
@@ -570,13 +570,16 @@ impl MmsState {
     /// after a stream gap that is the remainder of a message cut by the gap,
     /// already reported by the gap's own record; otherwise it is malformed.
     fn undecodable(&mut self, to_server: bool) {
-        if !*self.after_gap(to_server) {
-            self.record_tx(
-                to_server,
-                Some(MmsEvent::MalformedPdu),
-                Some((LossReason::Malformed, Missing::Message)),
-            );
+        let leftovers = self.gap_leftovers(to_server);
+        if *leftovers > 0 {
+            *leftovers -= 1;
+            return;
         }
+        self.record_tx(
+            to_server,
+            Some(MmsEvent::MalformedPdu),
+            Some((LossReason::Malformed, Missing::Message)),
+        );
     }
 
     /// Most likely reason a response travelling in `to_server` was not seen
@@ -623,7 +626,9 @@ impl MmsState {
             self.reassembly_tc.reset();
             self.gap_seen_tc = true;
         }
-        *self.after_gap(to_server) = true;
+        // A cut TPKT, then the tail of a cut COTP-segmented message. Bounded so
+        // garbage sent after a gap can't suppress malformed_pdu indefinitely.
+        *self.gap_leftovers(to_server) = 2;
         self.close_awaiting(to_server, LossReason::StreamGap);
         self.record_tx(
             to_server,
@@ -749,7 +754,7 @@ impl MmsState {
                 }
             }
             Ok(msg) => {
-                *self.after_gap(to_server) = false;
+                *self.gap_leftovers(to_server) = 0;
                 for apdu in msg.apdus {
                     self.handle_apdu(apdu, msg.spdu, to_server);
                 }
@@ -884,11 +889,12 @@ unsafe extern "C" fn mms_parse_ts(
     _data: *const c_void,
 ) -> AppLayerResult {
     let state = cast_pointer!(state, MmsState);
-    if stream_slice.is_gap() {
+    let result = if stream_slice.is_gap() {
         state.on_gap(true);
-        return AppLayerResult::ok();
-    }
-    let result = state.parse(flow, &stream_slice, true);
+        AppLayerResult::ok()
+    } else {
+        state.parse(flow, &stream_slice, true)
+    };
     if SCAppLayerParserStateIssetFlag(pstate, APP_LAYER_PARSER_EOF_TS) > 0 {
         state.on_close(true);
     }
@@ -903,11 +909,12 @@ unsafe extern "C" fn mms_parse_tc(
     _data: *const c_void,
 ) -> AppLayerResult {
     let state = cast_pointer!(state, MmsState);
-    if stream_slice.is_gap() {
+    let result = if stream_slice.is_gap() {
         state.on_gap(false);
-        return AppLayerResult::ok();
-    }
-    let result = state.parse(flow, &stream_slice, false);
+        AppLayerResult::ok()
+    } else {
+        state.parse(flow, &stream_slice, false)
+    };
     if SCAppLayerParserStateIssetFlag(pstate, APP_LAYER_PARSER_EOF_TC) > 0 {
         state.on_close(false);
     }
@@ -1331,6 +1338,22 @@ mod tests {
     }
 
     #[test]
+    fn test_decode_failures_after_gap_are_bounded() {
+        let mut s = MmsState::new();
+        s.on_gap(true);
+        let n = s.transactions.len();
+        for _ in 0..3 {
+            s.handle_tsdu(b"\x0d\xff", true);
+        }
+        // Two are taken as the gap's leftovers; the third is malformed.
+        assert_eq!(s.transactions.len(), n + 1);
+        assert_eq!(
+            s.transactions.back().unwrap().loss.unwrap().reason,
+            LossReason::Malformed
+        );
+    }
+
+    #[test]
     fn test_after_gap_cleared_by_successful_decode() {
         let mut s = MmsState::new();
         s.on_gap(true);
@@ -1400,9 +1423,8 @@ mod tests {
     #[test]
     fn test_oversize_message_records_loss() {
         let mut s = MmsState::new();
-        let big = vec![0u8; 2 * 1048576];
         let mut frame = vec![0x03, 0x00, 0x00, 0x00, 0x02, 0xF0, 0x00];
-        frame.extend_from_slice(&big[..60000]);
+        frame.resize(frame.len() + 60000, 0);
         let len = (frame.len() as u16).to_be_bytes();
         frame[2] = len[0];
         frame[3] = len[1];

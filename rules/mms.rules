@@ -261,6 +261,7 @@ alert mms any any -> any any (msg:"MMS Reject PDU (peer could not decode a PDU)"
 alert mms any any -> any any (msg:"MMS TELEMETRY Stream gap in MMS flow (data not observed)"; \
     app-layer-event:mms.stream_gap; \
     classtype:protocol-command-decode; \
+    metadata:attack_target ICS; \
     sid:3702304; rev:1;)
 
 # A response arrived for a request that was never seen: the request (which
@@ -268,4 +269,5 @@ alert mms any any -> any any (msg:"MMS TELEMETRY Stream gap in MMS flow (data no
 alert mms any any -> any any (msg:"MMS TELEMETRY Response without observed request"; \
     app-layer-event:mms.orphan_response; \
     classtype:protocol-command-decode; \
+    metadata:attack_target ICS; \
     sid:3702305; rev:1;)
