@@ -6,12 +6,22 @@ requires:
     - SURICATA_ICS_PLUGIN
 
 # Run with the shipped rules/mms.rules so the test guards the real ruleset.
+# The capture is also replayed with inline stream handling, where responses
+# are parsed on the server's own packets: the flow-direction checks below
+# must hold whichever packet flushes a transaction.
 command: |
   ${SRCDIR}/src/suricata --init-errors-fatal -k none \
       --set plugins.0="${SURICATA_ICS_PLUGIN}" \
       --set classification-file="${SRCDIR}/etc/classification.config" \
       --set reference-config-file="${SRCDIR}/etc/reference.config" \
       -c "${TEST_DIR}/suricata.yaml" -l "${OUTPUT_DIR}" \
+      -r "${TEST_DIR}/input.pcap" -S "${TEST_DIR}/../../rules/mms.rules" && \
+  mkdir -p "${OUTPUT_DIR}/inline" && \
+  ${SRCDIR}/src/suricata --init-errors-fatal -k none --set stream.inline=true \
+      --set plugins.0="${SURICATA_ICS_PLUGIN}" \
+      --set classification-file="${SRCDIR}/etc/classification.config" \
+      --set reference-config-file="${SRCDIR}/etc/reference.config" \
+      -c "${TEST_DIR}/suricata.yaml" -l "${OUTPUT_DIR}/inline" \
       -r "${TEST_DIR}/input.pcap" -S "${TEST_DIR}/../../rules/mms.rules"
 
 checks:
@@ -80,3 +90,24 @@ checks:
       match:
         event_type: flow
         app_proto: mms
+
+  # Transaction records are logged in flow direction: src is the client that
+  # opened the connection, never the server on port 102, whichever packet
+  # flushed the transaction (the request/response direction fields are
+  # unaffected).
+  - filter:
+      count: 0
+      match:
+        event_type: mms
+        src_port: 102
+  - filter:
+      filename: inline/eve.json
+      count: 0
+      match:
+        event_type: mms
+        src_port: 102
+  - filter:
+      filename: inline/eve.json
+      count: 23
+      match:
+        event_type: mms
