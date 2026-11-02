@@ -122,7 +122,10 @@ sudo cp rules/s7comm.rules rules/iec104.rules rules/mms.rules /usr/local/var/lib
 > (`s7comm`, `iec104`, `mms`), keywords, EVE types and rules are unchanged.
 
 > **Match the Suricata version:** build (or download) the plugin for the exact
-> Suricata release your sensors run, and upgrade both together. Suricata will
+> Suricata release your sensors run, and upgrade both together. Each
+> [release](https://github.com/LeargasSecurity/suricata-ics-parsers/releases)
+> ships a library per supported Suricata version
+> (`libsuricata_ics-suricata-<version>.so`, currently 8.0.6 and 8.0.8). Suricata will
 > load a plugin built for a different release; the plugin then logs a warning
 > such as `ics-parsers plugin was built against Suricata 8.0.6 but is running
 > in Suricata 8.0.8`.
@@ -521,15 +524,25 @@ direction: `src` is the client, never the server port (102/2404).
 
 Run them from a built Suricata source directory (`run.py` uses
 `./src/suricata`). The tests load the plugin from `SURICATA_ICS_PLUGIN` (they
-are skipped if it is unset) and need `--no-validation`, because the plugin's
-EVE types are not in Suricata's schema:
+are skipped if it is unset). Pass `--no-validation`: `run.py` validates EVE
+against Suricata's core `etc/schema.json`, which rejects the plugin's event
+types. Validate against the core schema merged with the plugin's
+[`schema/eve-ics.json`](schema/eve-ics.json) instead, as CI does:
 
 ```bash
 cd /path/to/suricata-8.0.x
 SURICATA_ICS_PLUGIN=/path/to/suricata-ics-parsers/target/release/libsuricata_ics.so \
-  ../suricata-verify/run.py --no-validation \
+  ../suricata-verify/run.py --no-validation --outdir=/tmp/verify-out \
   --testdir=/path/to/suricata-ics-parsers/tests          # or a name/prefix, e.g. iec104
+
+/path/to/suricata-ics-parsers/scripts/eve-schema.py etc/schema.json > /tmp/eve-schema.json
+(cd ../suricata-verify/eve-validator && cargo build --release)
+../suricata-verify/check-eve.py /tmp/verify-out -s /tmp/eve-schema.json
 ```
+
+`schema/eve-ics.json` describes the `s7comm`, `iec104` and `mms` records
+strictly (no unknown fields), so a logger change that adds a field must
+update it.
 
 The `mms-*` captures other than `mms-iccp` (a Wireshark sample capture) are
 generated with libIEC61850 by

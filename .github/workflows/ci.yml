@@ -26,8 +26,15 @@ jobs:
         run: rustfmt --edition 2021 --check src/lib.rs
 
   build:
-    name: build & test (Suricata ${{ '' }}8.0.8)
+    name: build & test (Suricata ${{ matrix.suricata }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Each prebuilt release library is built and tested against these.
+        suricata: [ "8.0.6", "8.0.8" ]
+    env:
+      SURICATA_VERSION: ${{ matrix.suricata }}
     steps:
       - uses: actions/checkout@v4
 
@@ -71,20 +78,28 @@ jobs:
       - name: Upload plugin artifact
         uses: actions/upload-artifact@v4
         with:
-          name: libsuricata_ics.so
+          name: libsuricata_ics-suricata-${{ matrix.suricata }}.so
           path: target/release/libsuricata_ics.so
           if-no-files-found: error
 
       - name: suricata-verify tests
         run: |
           git clone --depth 1 https://github.com/OISF/suricata-verify.git
-          # run.py uses ./src/suricata from the current directory. Plugin EVE
-          # types are not in Suricata's schema, so skip schema validation.
+          # run.py uses ./src/suricata from the current directory. Its EVE
+          # validation uses Suricata's core schema, which rejects the plugin's
+          # event types, so validation runs in the next step instead.
           export SURICATA_ICS_PLUGIN="$PWD/target/release/libsuricata_ics.so"
           VERIFY="$PWD/suricata-verify/run.py"
           TESTS="$PWD/tests"
+          OUT="$PWD/verify-output"
           cd "suricata-${SURICATA_VERSION}"
-          python3 "$VERIFY" --no-validation --testdir="$TESTS"
+          python3 "$VERIFY" --no-validation --testdir="$TESTS" --outdir="$OUT"
+
+      - name: Validate EVE output (core + plugin schema)
+        run: |
+          (cd suricata-verify/eve-validator && cargo build --release --quiet)
+          scripts/eve-schema.py "suricata-${SURICATA_VERSION}/etc/schema.json" > eve-schema.json
+          python3 suricata-verify/check-eve.py verify-output -s eve-schema.json
 
   docker:
     name: docker image
