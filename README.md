@@ -514,6 +514,11 @@ rules, and output assertions:
 | `iec104-commands` | IEC-104 STARTDT/GI/control commands vs. shipped `iec104.rules`, `iec104.dangerous`, EVE decoding |
 | `iec104-sq` | IEC-104 SQ=1 ASDUs, multiple APDUs per segment, no false positives |
 
+`iec104-commands`, `s7comm-recon-szl`, `s7comm-write-var`,
+`mms-iec61850-control` and `mms-iccp` also replay their capture with inline
+stream handling (output in `inline/`) and check that EVE records are in flow
+direction: `src` is the client, never the server port (102/2404).
+
 Run them from a built Suricata source directory (`run.py` uses
 `./src/suricata`). The tests load the plugin from `SURICATA_ICS_PLUGIN` (they
 are skipped if it is unset) and need `--no-validation`, because the plugin's

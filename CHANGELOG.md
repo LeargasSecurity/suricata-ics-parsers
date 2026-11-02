@@ -6,6 +6,25 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- EVE `src_ip`/`src_port`/`dest_ip`/`dest_port` on `s7comm`, `iec104` and
+  `mms` records could be reversed. The loggers were registered with
+  `LOG_DIR_PACKET`, so the addresses came from whichever packet flushed the
+  transaction, usually the server's reply, and records named the server
+  (port 102/2404) as the source, contradicting their own `direction` fields.
+  How many were affected depended on capture mode and ACK timing: up to all
+  of them with inline/IPS stream handling, and roughly a quarter of the
+  records in the bundled real captures in IDS mode. All three loggers now
+  use `LOG_DIR_FLOW`, like Suricata's Modbus, DNP3 and ENIP loggers: `src`
+  is the client that opened the connection. Record counts, `direction`
+  fields, other record content and alerts are unchanged. For a flow picked
+  up mid-connection, `src`/`dest` follow Suricata's `flow` record, as for
+  core protocols.
+- suricata-verify: `iec104-commands`, `s7comm-recon-szl`, `s7comm-write-var`,
+  `mms-iec61850-control` and `mms-iccp` also replay their capture with
+  inline stream handling and check that no record has the server port as
+  `src_port`.
+
 ## [0.2.1] - 2026-10-30
 
 Rebuild for the Suricata 8.0.8 security release. Upgrade Suricata and the

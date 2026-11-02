@@ -26,7 +26,9 @@ extern "C" fn ics_plugin_init() {
         name: b"s7comm\0".as_ptr() as *const libc::c_char,
         logname: b"JsonS7commLog\0".as_ptr() as *const libc::c_char,
         confname: b"eve-log.s7comm\0".as_ptr() as *const libc::c_char,
-        dir: SCOutputJsonLogDirection::LOG_DIR_PACKET as u8,
+        // LOG_DIR_FLOW: EVE src/dest are the flow's client/server, not the
+        // packet that happened to flush the transaction (as core Modbus/DNP3).
+        dir: SCOutputJsonLogDirection::LOG_DIR_FLOW as u8,
         Register: Some(s7comm_register_parser),
         Logger: Some(s7comm_logger_log),
         KeywordsRegister: Some(detect_s7comm_register),
@@ -42,7 +44,7 @@ extern "C" fn ics_plugin_init() {
         name: b"iec104\0".as_ptr() as *const libc::c_char,
         logname: b"JsonIec104Log\0".as_ptr() as *const libc::c_char,
         confname: b"eve-log.iec104\0".as_ptr() as *const libc::c_char,
-        dir: SCOutputJsonLogDirection::LOG_DIR_PACKET as u8,
+        dir: SCOutputJsonLogDirection::LOG_DIR_FLOW as u8,
         Register: Some(iec104_register_parser),
         Logger: Some(iec104_logger_log),
         KeywordsRegister: Some(detect_iec104_register),
@@ -58,7 +60,7 @@ extern "C" fn ics_plugin_init() {
         name: b"mms\0".as_ptr() as *const libc::c_char,
         logname: b"JsonMmsLog\0".as_ptr() as *const libc::c_char,
         confname: b"eve-log.mms\0".as_ptr() as *const libc::c_char,
-        dir: SCOutputJsonLogDirection::LOG_DIR_PACKET as u8,
+        dir: SCOutputJsonLogDirection::LOG_DIR_FLOW as u8,
         Register: Some(mms_register_parser),
         Logger: Some(mms_logger_log),
         KeywordsRegister: Some(detect_mms_register),
