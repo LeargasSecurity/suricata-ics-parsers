@@ -1,0 +1,584 @@
+{
+  "$comment": "EVE schema for the suricata-ics-parsers plugin's event types. Merge into Suricata's etc/schema.json with scripts/eve-schema.py; see README (Testing).",
+  "properties": {
+    "s7comm": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "pdu_reference": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "rosctr": {
+          "type": "string",
+          "enum": [
+            "Job",
+            "Ack",
+            "Ack_Data",
+            "Userdata",
+            "Unknown"
+          ]
+        },
+        "function_code": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "function_code_hex": {
+          "type": "string",
+          "pattern": "^0x[0-9a-f]{2}$"
+        },
+        "function_name": {
+          "type": "string"
+        },
+        "userdata_group": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "userdata_group_name": {
+          "type": "string"
+        },
+        "userdata_subfunction": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "item": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "area": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "area_name": {
+              "type": "string"
+            },
+            "db_number": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "address": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "length": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "count",
+            "area",
+            "db_number",
+            "address",
+            "length"
+          ]
+        },
+        "cotp": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "src_tsap": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "dst_tsap": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "rack": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "slot": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "src_tsap",
+            "dst_tsap",
+            "rack",
+            "slot"
+          ]
+        },
+        "plc_control_service": {
+          "type": "string"
+        },
+        "is_dangerous": {
+          "type": "boolean"
+        },
+        "attack_technique": {
+          "type": "string"
+        },
+        "error_class": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "error_code": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "s7comm_plus": {
+          "const": true
+        },
+        "plus": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "version": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "opcode": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "opcode_name": {
+              "type": "string"
+            },
+            "function": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "function_hex": {
+              "type": "string",
+              "pattern": "^0x[0-9a-f]{4}$"
+            },
+            "function_name": {
+              "type": "string"
+            },
+            "sequence_number": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "version",
+            "opcode"
+          ]
+        }
+      },
+      "required": [
+        "pdu_reference",
+        "rosctr",
+        "is_dangerous"
+      ],
+      "description": "S7comm / S7comm-Plus transaction (src/log.rs)"
+    },
+    "iec104": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "direction": {
+          "type": "string",
+          "enum": [
+            "to_server",
+            "to_client"
+          ]
+        },
+        "apci": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "length": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "format": {
+              "type": "string",
+              "enum": [
+                "I",
+                "S",
+                "U"
+              ]
+            },
+            "send_seq": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "recv_seq": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "u_function": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "u_function_name": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "length"
+          ]
+        },
+        "asdu": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type_id": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "type_name": {
+              "type": "string"
+            },
+            "sq": {
+              "type": "boolean"
+            },
+            "num_objects": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "cot": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "cot_name": {
+              "type": "string"
+            },
+            "negative": {
+              "type": "boolean"
+            },
+            "test": {
+              "type": "boolean"
+            },
+            "originator": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "common_address": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "ioa": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "qualifier": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "command": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "select": {
+                  "type": "boolean"
+                },
+                "qualifier": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "state": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "value": {
+                  "type": "number"
+                },
+                "bitstring": {
+                  "type": "string",
+                  "pattern": "^0x[0-9a-f]{8}$"
+                }
+              }
+            }
+          },
+          "required": [
+            "type_id",
+            "sq",
+            "num_objects",
+            "cot",
+            "negative",
+            "test",
+            "originator",
+            "common_address"
+          ]
+        },
+        "is_dangerous": {
+          "type": "boolean"
+        },
+        "attack_technique": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "direction",
+        "apci",
+        "is_dangerous"
+      ],
+      "description": "IEC 60870-5-104 APDU (src/iec104/log.rs)"
+    },
+    "mms": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "session": {
+          "type": "string",
+          "enum": [
+            "data",
+            "not_finished",
+            "finish",
+            "disconnect",
+            "refuse",
+            "connect",
+            "accept",
+            "abort",
+            "abort_accept",
+            "unknown"
+          ]
+        },
+        "request": {
+          "$ref": "#/$defs/mms.apdu"
+        },
+        "response": {
+          "$ref": "#/$defs/mms.apdu"
+        },
+        "is_dangerous": {
+          "type": "boolean"
+        },
+        "attack_technique": {
+          "type": "string"
+        },
+        "iccp_transfer_set": {
+          "const": true
+        }
+      },
+      "required": [
+        "is_dangerous"
+      ],
+      "description": "MMS (IEC 61850 / ICCP) transaction (src/mms/log.rs)"
+    }
+  },
+  "$defs": {
+    "mms.apdu": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "direction": {
+          "type": "string",
+          "enum": [
+            "to_server",
+            "to_client"
+          ]
+        },
+        "acse": {
+          "type": "string",
+          "enum": [
+            "aarq",
+            "aare",
+            "rlrq",
+            "rlre",
+            "abrt"
+          ]
+        },
+        "application_context": {
+          "type": "string"
+        },
+        "called_ap_title": {
+          "type": "string"
+        },
+        "called_ae_qualifier": {
+          "type": "integer"
+        },
+        "calling_ap_title": {
+          "type": "string"
+        },
+        "calling_ae_qualifier": {
+          "type": "integer"
+        },
+        "responding_ap_title": {
+          "type": "string"
+        },
+        "responding_ae_qualifier": {
+          "type": "integer"
+        },
+        "authentication_mechanism": {
+          "type": "string"
+        },
+        "authentication": {
+          "const": true
+        },
+        "result": {
+          "type": "string",
+          "enum": [
+            "accepted",
+            "rejected-permanent",
+            "rejected-transient",
+            "unknown"
+          ]
+        },
+        "reason": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "pdu_type": {
+          "type": "string",
+          "enum": [
+            "confirmed_request",
+            "confirmed_response",
+            "confirmed_error",
+            "unconfirmed",
+            "reject",
+            "cancel_request",
+            "cancel_response",
+            "cancel_error",
+            "initiate_request",
+            "initiate_response",
+            "initiate_error",
+            "conclude_request",
+            "conclude_response",
+            "conclude_error",
+            "unknown"
+          ]
+        },
+        "invoke_id": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "service": {
+          "type": [
+            "string",
+            "integer"
+          ]
+        },
+        "object_class": {
+          "type": [
+            "string",
+            "integer"
+          ]
+        },
+        "domain": {
+          "type": "string"
+        },
+        "objects": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/mms.object_name"
+          }
+        },
+        "members": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/mms.object_name"
+          }
+        },
+        "names": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "success_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "failure_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "error": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "class": {
+              "type": [
+                "string",
+                "integer"
+              ]
+            },
+            "code": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "class",
+            "code"
+          ]
+        },
+        "reject": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "reason": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "code": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "reason",
+            "code"
+          ]
+        },
+        "initiate": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "max_pdu_size": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "max_serv_outstanding_calling": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "max_serv_outstanding_called": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "nesting_level": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "version": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      },
+      "required": [
+        "direction"
+      ]
+    },
+    "mms.object_name": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "scope": {
+          "type": "string",
+          "enum": [
+            "vmd",
+            "domain",
+            "aa"
+          ]
+        },
+        "domain": {
+          "type": "string"
+        },
+        "item": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "scope",
+        "item"
+      ]
+    }
+  }
+}

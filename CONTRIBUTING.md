@@ -34,7 +34,8 @@ the generated `Cargo.toml` directly.
       (a PCAP, `test.rules`, and output assertions) — see existing tests as a
       template.
 - [ ] New detection keywords / EVE fields are documented in the protocol's
-      `doc/*-keywords.rst` and the README tables.
+      `doc/*-keywords.rst` and the README tables, and new EVE fields are added
+      to `schema/eve-ics.json` (CI validates all test output against it).
 - [ ] New rules use a SID in the protocol's range and carry an ATT&CK-ICS
       reference where applicable:
 
